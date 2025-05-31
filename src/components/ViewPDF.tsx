@@ -57,8 +57,14 @@ const ViewPDF = ({ account, provider }: ViewPDFProps) => {
           responseType: 'blob'
         });
 
+        console.log('Decryption response data:', decryptResponse.data);
+
         const pdfBlob = new Blob([decryptResponse.data], { type: 'application/pdf' });
+        console.log('Created PDF Blob:', pdfBlob);
+
         const pdfUrl = URL.createObjectURL(pdfBlob);
+        console.log('Generated PDF URL:', pdfUrl);
+
         setPdfUrl(pdfUrl);
       } catch (err: any) {
         setError(err.message || 'Error fetching NFT data');

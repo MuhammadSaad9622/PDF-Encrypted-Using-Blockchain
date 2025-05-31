@@ -6,85 +6,116 @@ const readFileAsync = promisify(fs.readFile);
 const writeFileAsync = promisify(fs.writeFile);
 
 /**
- * Encrypts a file using AES-256-CBC with a random IV
- * @param {string} inputPath - Path to the file to encrypt
- * @param {string} outputPath - Path to save the encrypted file
- * @returns {Promise<string>} - The encryption key (key + IV)
+ * Improved file encryption with better error handling and data conversion
  */
 export const encryptFile = async (inputPath, outputPath) => {
   try {
-    // Read the file
-    const fileData = await readFileAsync(inputPath);
-    console.log('File size:', fileData.length);
+    // Read file as buffer
+    const fileBuffer = await readFileAsync(inputPath);
     
-    // Generate a random key and IV
-    const key = CryptoJS.lib.WordArray.random(32); // 256 bits
-    const iv = CryptoJS.lib.WordArray.random(16); // 128 bits
+    // Generate random key and IV
+    const key = CryptoJS.lib.WordArray.random(32); // 256-bit key
+    const iv = CryptoJS.lib.WordArray.random(16);  // 128-bit IV
     
-    // Convert file data to WordArray
-    const wordArray = CryptoJS.lib.WordArray.create(fileData);
-    console.log('WordArray size:', wordArray.sigBytes);
-    
-    // Encrypt the file
-    const encrypted = CryptoJS.AES.encrypt(
-      wordArray,
-      key,
-      { iv: iv, mode: CryptoJS.mode.CBC, padding: CryptoJS.pad.Pkcs7 }
+    // Convert buffer to WordArray properly
+    const wordArray = CryptoJS.lib.WordArray.create(
+      Array.from(new Uint8Array(fileBuffer))
     );
     
-    // Save the encrypted file
-    const encryptedString = encrypted.toString();
-    await writeFileAsync(outputPath, encryptedString);
-    console.log('Encrypted file size:', encryptedString.length);
-    
-    // Return the encryption key and IV (base64 encoded)
-    const keyData = JSON.stringify({
-      key: key.toString(CryptoJS.enc.Base64),
-      iv: iv.toString(CryptoJS.enc.Base64)
+    // Encrypt with explicit parameters
+    const encrypted = CryptoJS.AES.encrypt(wordArray, key, {
+      iv: iv,
+      mode: CryptoJS.mode.CBC,
+      padding: CryptoJS.pad.Pkcs7,
+      format: CryptoJS.format.OpenSSL // Ensures consistent output format
     });
-    console.log('Key data size:', keyData.length);
     
-    return keyData;
+    // Write encrypted data (already base64 encoded by CryptoJS)
+    await writeFileAsync(outputPath, encrypted.toString());
+    
+    // Return key details as JSON string
+    return JSON.stringify({
+      key: key.toString(CryptoJS.enc.Hex),
+      iv: iv.toString(CryptoJS.enc.Hex)
+    });
+    
   } catch (error) {
-    console.error('Error encrypting file:', error);
-    throw error;
+    console.error('Encryption error:', error);
+    throw new Error(`File encryption failed: ${error.message}`);
   }
 };
 
 /**
- * Decrypts a file using AES-256-CBC
- * @param {string} encryptedData - The encrypted data (base64 string)
- * @param {object} encryptionDetails - Object containing key and IV (base64 encoded)
- * @returns {Buffer} - The decrypted file data
+ * Robust decryption function with proper data handling
  */
 export const decryptData = (encryptedData, encryptionDetails) => {
   try {
-    console.log('Decrypting data of length:', encryptedData.length);
-    // encryptionDetails is now an object directly
-    const { key, iv } = encryptionDetails;
-    console.log('Using key and IV for decryption');
+    console.log('Received encryptionDetails:', encryptionDetails);
     
-    // Decrypt the data
-    const decrypted = CryptoJS.AES.decrypt(
-      encryptedData,
-      CryptoJS.enc.Base64.parse(key),
-      { 
-        iv: CryptoJS.enc.Base64.parse(iv),
-        mode: CryptoJS.mode.CBC,
-        padding: CryptoJS.pad.Pkcs7
+    // Handle case where encryptionDetails is already an object
+    if (typeof encryptionDetails === 'object' && encryptionDetails !== null) {
+      if (!encryptionDetails.key || !encryptionDetails.iv) {
+        throw new Error('Encryption details object missing key or iv');
       }
-    );
+      return decryptWithDetails(encryptedData, encryptionDetails);
+    }
+
+    // Handle case where it's a JSON string
+    if (typeof encryptionDetails === 'string') {
+      try {
+        const parsedDetails = JSON.parse(encryptionDetails);
+        if (parsedDetails && parsedDetails.key && parsedDetails.iv) {
+          return decryptWithDetails(encryptedData, parsedDetails);
+        }
+      } catch (e) {
+        console.warn('Failed to parse encryptionDetails as JSON:', e);
+      }
+    }
+
+    // Handle case where it's a raw key string (your specific case)
+    if (typeof encryptionDetails === 'string') {
+      console.warn('Assuming raw key string format - please verify this is correct');
+      // Try to split the string into key and IV
+      // This is a guess - you'll need to adjust based on your actual format
+      const key = encryptionDetails.slice(0, 64); // First 64 chars as key (32 bytes hex)
+      const iv = encryptionDetails.slice(64);     // Remainder as IV (32 chars = 16 bytes hex)
+      
+      if (key.length === 64 && iv.length === 32) {
+        return decryptWithDetails(encryptedData, { key, iv });
+      }
+    }
+
+    throw new Error('Could not determine encryption details format');
     
-    console.log('Decrypted WordArray size:', decrypted.sigBytes);
-    
-    // Convert the decrypted WordArray to a Buffer
-    const wordArray = decrypted;
-    const buffer = Buffer.from(wordArray.toString(CryptoJS.enc.Latin1), 'latin1');
-    
-    console.log('Final buffer size:', buffer.length);
-    return buffer;
   } catch (error) {
-    console.error('Error decrypting data:', error);
-    throw error;
+    console.error('Decryption error:', error);
+    throw new Error(`Decryption failed: ${error.message}`);
   }
 };
+
+// Helper function for actual decryption
+function decryptWithDetails(encryptedData, { key, iv }) {
+  // Validate key and IV formats
+  if (typeof key !== 'string' || typeof iv !== 'string') {
+    throw new Error('Key and IV must be strings');
+  }
+
+  // Decrypt the data
+  const decrypted = CryptoJS.AES.decrypt(
+    encryptedData,
+    CryptoJS.enc.Hex.parse(key),
+    { 
+      iv: CryptoJS.enc.Hex.parse(iv),
+      mode: CryptoJS.mode.CBC,
+      padding: CryptoJS.pad.Pkcs7
+    }
+  );
+
+  // Convert to buffer
+  try {
+    return Buffer.from(decrypted.toString(CryptoJS.enc.Latin1), 'latin1');
+  } catch (e) {
+    console.warn('Latin1 conversion failed, trying Utf8');
+    return Buffer.from(decrypted.toString(CryptoJS.enc.Utf8), 'utf8');
+  }
+}

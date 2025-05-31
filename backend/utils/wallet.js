@@ -24,15 +24,10 @@ try {
   console.error('Error reading contract address from file:', error);
 }
 
-// Initialize provider and wallet
+// Initialize provider
 const provider = new ethers.JsonRpcProvider(
   process.env.POLYGON_MAINNET_RPC_URL || 'https://polygon-rpc.com'
 );
-
-// Set private key directly for testing
-const privateKey = 'f'; // Replace this with your actual private key
-
-const wallet = new ethers.Wallet(privateKey, provider);
 
 // Get contract ABI from file
 const getContractABI = () => {
@@ -57,13 +52,13 @@ const getContractABI = () => {
 };
 
 /**
- * Mints an NFT with the given metadata URI, Arweave ID, IV, and encryption key hash
+ * Prepares the transaction data for minting an NFT with the given metadata URI, Arweave ID, IV, and encryption key hash
  * @param {string} recipientAddress - Address to mint the NFT to
  * @param {string} metadataUri - URI of the metadata on Arweave
  * @param {string} arweaveId - Arweave transaction ID of the encrypted PDF
  * @param {string} iv - Initialization Vector used for encryption
  * @param {bytes32} encryptionKeyHash - Hash of the encryption key
- * @returns {Promise<{tokenId: number, transactionHash: string}>} - Token ID and transaction hash
+ * @returns {Promise<object>} - Transaction request object
  */
 export const mintNFTWithMetadata = async (
   recipientAddress,
@@ -76,11 +71,12 @@ export const mintNFTWithMetadata = async (
     if (!contractAddress) {
       throw new Error('Contract address not found. Deploy the contract first.');
     }
-    
-    const abi = getContractABI(); // Use the hardcoded ABI
-    const contract = new ethers.Contract(contractAddress, abi, wallet);
-    
-    console.log('Calling contract.mint with:', {
+
+    const abi = getContractABI();
+    // Initialize contract instance with provider only, no signer needed for preparing tx
+    const contract = new ethers.Contract(contractAddress, abi, provider);
+
+    console.log('Preparing mint transaction data with:', {
       to: recipientAddress,
       tokenURI: metadataUri,
       arweaveId,
@@ -88,38 +84,29 @@ export const mintNFTWithMetadata = async (
       encryptionKeyHash: encryptionKeyHash // Pass as bytes32
     });
 
-    // Mint the NFT with all required arguments
-    const tx = await contract.mint(
+    // Encode the transaction data
+    const data = contract.interface.encodeFunctionData("mint", [
       recipientAddress,
       metadataUri,
       arweaveId,
       iv,
       encryptionKeyHash
-    );
-    
-    console.log('Mint transaction sent:', tx.hash);
-    const receipt = await tx.wait();
-    console.log('Mint transaction confirmed:', receipt.hash);
+    ]);
 
-    // Get the token ID from the event
-    const event = receipt.logs
-      .filter(log => log.topics[0] === ethers.id('NFTMinted(uint256,address,string,string)')) // Updated event signature
-      .map(log => {
-        const parsedLog = contract.interface.parseLog({
-          topics: log.topics,
-          data: log.data
-        });
-        return parsedLog.args;
-      })[0];
-
-    console.log('Minted Token ID:', event[0].toString());
-    
-    return {
-      tokenId: event[0].toString(), // Return as string
-      transactionHash: receipt.hash
+    // Prepare the transaction request object
+    const transactionRequest = {
+      to: contractAddress,
+      data: data,
+      // Add gas price, gas limit, nonce if needed (can often be estimated on frontend)
+      // value: ethers.parseEther("0.00"), // Example for sending ETH
     };
+
+    console.log('Prepared transaction request:', transactionRequest);
+
+    // Return the transaction request object for the frontend to sign and send
+    return transactionRequest;
   } catch (error) {
-    console.error('Error minting NFT:', error);
+    console.error('Error preparing mint transaction:', error);
     throw error;
   }
 };

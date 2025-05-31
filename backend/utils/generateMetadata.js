@@ -51,7 +51,7 @@ export const uploadMetadata = async (metadata) => {
     const bundlr = new Bundlr(
       'https://node1.bundlr.network',
       'matic',
-      'f',
+      'f10dc859804a0c5934e1d0462246f665387e8244405232ab6b6b6666190deb50',
       {
         providerUrl: 'https://polygon-rpc.com'
       }
