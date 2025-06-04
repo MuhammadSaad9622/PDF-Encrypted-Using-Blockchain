@@ -4,7 +4,8 @@
   "description": "Backend for the Encrypted PDF NFT project",
   "main": "server.js",
   "scripts": {
-    "start": "node server.js"
+    "start": "node server.js",
+    "build": "echo \"No build process required for this Node.js backend.\""
   },
   "dependencies": {
     "@bundlr-network/client": "^0.11.2",
