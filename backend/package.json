@@ -1,0 +1,18 @@
+{
+  "name": "backend",
+  "version": "1.0.0",
+  "description": "Backend for the Encrypted PDF NFT project",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "@bundlr-network/client": "^0.11.2",
+    "crypto-js": "^4.2.0",
+    "dotenv": "^16.4.5",
+    "ethers": "^6.12.1",
+    "express": "^4.19.2",
+    "express-fileupload": "^1.5.0",
+    "uuid": "^9.0.1"
+  }
+} 
