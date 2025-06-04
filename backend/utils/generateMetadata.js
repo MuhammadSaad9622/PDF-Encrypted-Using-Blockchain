@@ -1,4 +1,3 @@
-import Bundlr from '@bundlr-network/client';
 import dotenv from 'dotenv';
 
 dotenv.config();
@@ -38,47 +37,4 @@ export const generateMetadata = ({ name, description, arweaveUrl, encryptionKey,
       encryption: encryptionKey // Store the full encryption key object
     }
   };
-};
-
-/**
- * Uploads metadata to Arweave via Bundlr
- * @param {Object} metadata - NFT metadata object
- * @returns {Promise<{id: string, url: string}>} - Arweave transaction ID and URL
- */
-export const uploadMetadata = async (metadata) => {
-  try {
-    // Initialize Bundlr client
-    const bundlr = new Bundlr(
-      'https://node1.bundlr.network',
-      'matic',
-      'f10dc859804a0c5934e1d0462246f665387e8244405232ab6b6b6666190deb50',
-      {
-        providerUrl: 'https://polygon-rpc.com'
-      }
-    );
-    
-    // Convert metadata to JSON string
-    const metadataString = JSON.stringify(metadata);
-    
-    // Check for sufficient funds
-    const price = await bundlr.getPrice(Buffer.byteLength(metadataString));
-    const balance = await bundlr.getLoadedBalance();
-    
-    if (balance.isLessThan(price)) {
-      const fundAmount = price.minus(balance).multipliedBy(1.1).integerValue(); // Add 10% buffer
-      await bundlr.fund(fundAmount);
-    }
-    
-    // Upload the metadata
-    const tags = [{ name: 'Content-Type', value: 'application/json' }];
-    const response = await bundlr.upload(metadataString, { tags });
-    
-    return {
-      id: response.id,
-      url: `https://arweave.net/${response.id}`
-    };
-  } catch (error) {
-    console.error('Error uploading metadata:', error);
-    throw error;
-  }
 };

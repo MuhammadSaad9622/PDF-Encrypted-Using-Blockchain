@@ -28,7 +28,7 @@ createRoot(document.getElementById('root')!).render(
     {/* Wrap the App with WagmiProvider and QueryClientProvider */}
     <WagmiProvider config={config}>
       <QueryClientProvider client={queryClient}>
-        <App />
+    <App />
       </QueryClientProvider>
     </WagmiProvider>
   </StrictMode>

@@ -52,7 +52,7 @@ const MyNFTs = ({ account, provider }: MyNFTsProps) => {
           // Continue, as sometimes provider might be valid even if network check fails early
         }
 
-        const contractAddress = '0x2b65C896A30181078e536332233b5DC411955BB3';
+        const contractAddress = '0xA16185A3639e128eC3C6CDfDF2681C0887673f4d';
         console.log('fetchNFTs: Using contract address:', contractAddress);
 
         if (!contractAddress) {

@@ -26,9 +26,9 @@ const polygonRpcUrl = process.env.POLYGON_MAINNET_RPC_URL || 'https://polygon-rp
 // Re-initialize bundlr as a placeholder or if certain methods are still needed without a signer
 // This might need adjustment based on how getUploadPrice and getBundlrAddress are used
 // If getUploadPrice requires a connected wallet, it might also need to move to frontend
-const bundlr = new Bundlr(
-    bundlrNode,
-    bundlrCurrency,
+export const bundlr = new Bundlr(
+  bundlrNode,
+  bundlrCurrency,
     undefined, // Initialize without a private key or signer in the backend
     { providerUrl: polygonRpcUrl } // Pass options as the fourth argument
 );

@@ -13,6 +13,9 @@ export const encryptFile = async (inputPath, outputPath) => {
     // Read file as buffer
     const fileBuffer = await readFileAsync(inputPath);
     
+    // Log original file buffer size
+    console.log('Original file buffer size:', fileBuffer.length);
+    
     // Generate random key and IV
     const key = CryptoJS.lib.WordArray.random(32); // 256-bit key
     const iv = CryptoJS.lib.WordArray.random(16);  // 128-bit IV
@@ -22,6 +25,9 @@ export const encryptFile = async (inputPath, outputPath) => {
       Array.from(new Uint8Array(fileBuffer))
     );
     
+    // Log WordArray size
+    console.log('WordArray size after creation:', wordArray.sigBytes);
+    
     // Encrypt with explicit parameters
     const encrypted = CryptoJS.AES.encrypt(wordArray, key, {
       iv: iv,
@@ -30,8 +36,17 @@ export const encryptFile = async (inputPath, outputPath) => {
       format: CryptoJS.format.OpenSSL // Ensures consistent output format
     });
     
+    // Log encrypted data format and size
+    console.log('Encrypted data format (CryptoJS):', encrypted.format);
+    console.log('Encrypted data size (CryptoJS):', encrypted.ciphertext.sigBytes);
+    
     // Write encrypted data (already base64 encoded by CryptoJS)
     await writeFileAsync(outputPath, encrypted.toString());
+    
+    // Log output file path and size
+    const encryptedFileSize = fs.statSync(outputPath).size;
+    console.log('Encrypted file written to:', outputPath);
+    console.log('Encrypted file size on disk:', encryptedFileSize);
     
     // Return key details as JSON string
     return JSON.stringify({
@@ -50,50 +65,39 @@ export const encryptFile = async (inputPath, outputPath) => {
  */
 export const decryptData = (encryptedData, encryptionDetails) => {
   try {
-    console.log('Received encryptionDetails:', encryptionDetails);
-    
-    // Handle case where encryptionDetails is already an object
-    if (typeof encryptionDetails === 'object' && encryptionDetails !== null) {
-      if (!encryptionDetails.key || !encryptionDetails.iv) {
-        throw new Error('Encryption details object missing key or iv');
-      }
-      return decryptWithDetails(encryptedData, encryptionDetails);
-    }
+    console.log('Decrypting data of length:', encryptedData.length);
+    const { key, iv } = encryptionDetails;
+    console.log('Using key and IV for decryption');
 
-    // Handle case where it's a JSON string
-    if (typeof encryptionDetails === 'string') {
-      try {
-        const parsedDetails = JSON.parse(encryptionDetails);
-        if (parsedDetails && parsedDetails.key && parsedDetails.iv) {
-          return decryptWithDetails(encryptedData, parsedDetails);
-        }
-      } catch (e) {
-        console.warn('Failed to parse encryptionDetails as JSON:', e);
+    // Decrypt the data
+    const decrypted = CryptoJS.AES.decrypt(
+      encryptedData, // Pass the Base64 encoded string directly
+      CryptoJS.enc.Hex.parse(key),
+      {
+        iv: CryptoJS.enc.Hex.parse(iv),
+        mode: CryptoJS.mode.CBC,
+        padding: CryptoJS.pad.Pkcs7
       }
-    }
+    );
 
-    // Handle case where it's a raw key string (your specific case)
-    if (typeof encryptionDetails === 'string') {
-      console.warn('Assuming raw key string format - please verify this is correct');
-      // Try to split the string into key and IV
-      // This is a guess - you'll need to adjust based on your actual format
-      const key = encryptionDetails.slice(0, 64); // First 64 chars as key (32 bytes hex)
-      const iv = encryptionDetails.slice(64);     // Remainder as IV (32 chars = 16 bytes hex)
-      
-      if (key.length === 64 && iv.length === 32) {
-        return decryptWithDetails(encryptedData, { key, iv });
-      }
-    }
+    console.log('Decrypted WordArray size:', decrypted.sigBytes);
 
-    throw new Error('Could not determine encryption details format');
-    
+    // Convert the decrypted WordArray to a Uint8Array and then to a Buffer
+    const buffer = new Uint8Array(decrypted.sigBytes);
+    for (let i = 0; i < decrypted.sigBytes; i++) {
+      buffer[i] = (decrypted.words[i >>> 2] >>> (24 - (i % 4) * 8)) & 0xff;
+    }    
+
+    console.log('Final buffer size:', buffer.length);
+    return buffer;
   } catch (error) {
-    console.error('Decryption error:', error);
-    throw new Error(`Decryption failed: ${error.message}`);
+    console.error('Error decrypting data:', error);
+    throw error;
   }
 };
 
-// Helper function for actual decryption
+// Helper function for actual decryption (removed as logic is now in decryptData)
+/*
 function decryptWithDetails(encryptedData, { key, iv }) {
   // Validate key and IV formats
   if (typeof key !== 'string' || typeof iv !== 'string') {
@@ -119,3 +123,4 @@ function decryptWithDetails(encryptedData, { key, iv }) {
     return Buffer.from(decrypted.toString(CryptoJS.enc.Utf8), 'utf8');
   }
 }
+*/

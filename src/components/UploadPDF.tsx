@@ -78,18 +78,22 @@ const UploadPDF = ({ account, provider }: UploadPDFProps) => {
       setEncryptionKey(response.data.encryptionKey || null);
 
       setLoading(false);
+      // After upload and encryption, move to the step where user enters recipient/NFT details
       setStep(2);
     } catch (err: any) {
       setError(err.response?.data?.error || 'Error encrypting and uploading file');
-      console.error(err);
+      console.error('Encrypt and upload error:', err);
       setLoading(false);
     }
   };
 
-  const handleGetArweavePrice = async (e: React.FormEvent) => {
+  // Renamed function to get total price
+  const handleGetTotalArweavePrice = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!encryptedFilePath) {
-        setError('Encrypted file path is missing');
+    // Ensure all required details from step 2 are available
+    if (!encryptedFilePath || !encryptionKey || !file?.name || !recipientAddress) {
+        setError('Missing required information to calculate price. Please go back to the previous step.');
+        console.error('Missing required information for handleGetTotalArweavePrice', { encryptedFilePath, encryptionKey, fileName: file?.name, recipientAddress });
         return;
     }
 
@@ -98,26 +102,37 @@ const UploadPDF = ({ account, provider }: UploadPDFProps) => {
     setArweavePrice(null);
 
     try {
-        const response = await axios.post('http://localhost:3001/api/arweave-price', {
-            encryptedFilePath: encryptedFilePath
+        // Call the new backend endpoint to get total price for file + metadata
+        const response = await axios.post('http://localhost:3001/api/total-arweave-price', {
+            encryptedFilePath: encryptedFilePath,
+            originalName: file.name, // Pass original name
+            encryptionKey: encryptionKey, // Pass encryption key
+            recipientAddress: recipientAddress, // Pass recipient address
+            name: name, // Pass NFT name
+            description: description // Pass NFT description
+             // arweaveId and arweaveUrl are not available yet, pass as null or undefined
         });
 
-        setArweavePrice(response.data.price);
+        console.log('Total Arweave price response:', response.data);
+
+        setArweavePrice(response.data.totalPrice); // Store the total price
 
         setLoading(false);
-        setStep(3);
+        setStep(4); // Move to fund Bundlr step (step 4 in the new flow)
 
     } catch (err: any) {
-        setError(err.response?.data?.error || 'Error getting Arweave upload price');
-        console.error(err);
+        setError(err.response?.data?.error || 'Error getting total Arweave upload price');
+        console.error('Get total Arweave price error:', err);
         setLoading(false);
     }
   };
 
   const handleFundBundlr = async (e: React.FormEvent) => {
     e.preventDefault();
+    // Ensure total Arweave price is available from step 3
     if (!provider || !arweavePrice) {
-      setError('Missing wallet provider or upload price');
+      setError('Missing wallet provider or total upload price. Please go back to the previous step.');
+      console.error('Missing required information for handleFundBundlr', { provider, arweavePrice });
       return;
     }
 
@@ -128,13 +143,12 @@ const UploadPDF = ({ account, provider }: UploadPDFProps) => {
         // Get Irys client
         const irys = await getIrysClient();
 
-        // Fund Bundlr (Irys)
+        // Fund Bundlr (Irys) with the total price
         const amountToFund = BigInt(arweavePrice); // Convert string price to BigInt
         const balance = await irys.getBalance(irys.address);
         console.log('Current Irys balance:', balance.toString());
 
-        // Check if funding is necessary (optional but good practice)
-        // Convert BigNumber balance to BigInt for comparison and arithmetic
+        // Check if funding is necessary
         const balanceBigInt = BigInt(balance.toString());
         if (balanceBigInt < amountToFund) {
            const amountNeeded = amountToFund - balanceBigInt;
@@ -146,19 +160,21 @@ const UploadPDF = ({ account, provider }: UploadPDFProps) => {
         }
 
         setLoading(false);
-        setStep(4); // Move to step 4 after funding
+        setStep(5); // Move to Upload to Arweave step (step 5 in the new flow)
 
     } catch (err: any) {
         setError(err.message || 'Error funding Irys');
-        console.error(err);
+        console.error('Irys funding error:', err);
         setLoading(false);
     }
   };
 
   const handleArweaveUpload = async (e: React.FormEvent) => {
     e.preventDefault();
+    // Ensure necessary info is available from previous steps
     if (!encryptedFilePath || !encryptionKey || !file?.name || !recipientAddress || !provider) {
-        setError('Missing required information for Arweave upload and minting');
+        setError('Missing required information for Arweave upload. Please go back to previous steps.');
+         console.error('Missing required information for handleArweaveUpload', { encryptedFilePath, encryptionKey, fileName: file?.name, recipientAddress, provider });
         return;
     }
 
@@ -170,7 +186,7 @@ const UploadPDF = ({ account, provider }: UploadPDFProps) => {
         // Get Irys client
         const irys = await getIrysClient();
 
-        // 1. Fetch the encrypted file from the backend
+        // 1. Fetch the encrypted file from the backend (already done in previous step, but re-fetching for upload)
         const fileId = getFileIdFromPath(encryptedFilePath);
         if (!fileId) {
           setError('Could not extract file ID from path');
@@ -178,41 +194,82 @@ const UploadPDF = ({ account, provider }: UploadPDFProps) => {
           return;
         }
 
+        // Use fetch with retry for potentially large file download
         const fileResponse = await fetch(`http://localhost:3001/api/encrypted-file/${fileId}`);
         if (!fileResponse.ok) {
-            throw new Error('Failed to fetch encrypted file from backend');
+            throw new Error(`Failed to fetch encrypted file from backend: ${fileResponse.statusText}`);
         }
         const encryptedFileBlob = await fileResponse.blob();
 
+        // Log Blob details
+        console.log('Fetched encrypted file Blob size:', encryptedFileBlob.size);
+        console.log('Fetched encrypted file Blob type:', encryptedFileBlob.type);
+
         // Convert Blob to ArrayBuffer and then to Buffer for Irys upload
         const encryptedFileArrayBuffer = await encryptedFileBlob.arrayBuffer();
+        // Use Buffer.from with the correct type for ArrayBuffer
         const encryptedFileBuffer = Buffer.from(encryptedFileArrayBuffer); // Convert ArrayBuffer to Buffer
 
-        // 2. Upload the file to Arweave using the client-side Irys client
+        // Log Buffer size
+        console.log('Encrypted file Buffer size after conversion:', encryptedFileBuffer.length);
+
+        // 2. Upload the *encrypted file* to Arweave using the client-side Irys client
         console.log('Uploading encrypted file to Arweave using Irys...');
-        const tags = [
+
+        // Log the buffer being sent to Irys
+        console.log('Buffer being uploaded to Irys - Type:', typeof encryptedFileBuffer);
+        console.log('Buffer being uploaded to Irys - Size:', encryptedFileBuffer.length);
+
+        const fileTags = [
           { name: 'Content-Type', value: encryptedFileBlob.type || 'application/octet-stream' },
-          { name: 'App-Name', value: 'YourAppName' }, // Replace with your app name
+          { name: 'App-Name', value: 'EncryptedPDF-DApp' }, // Replace with your app name
           // Add other relevant tags if needed
         ];
-        // Pass Buffer to upload
-        const response = await irys.upload(encryptedFileBuffer, { tags });
+        const fileUploadResponse = await irys.upload(encryptedFileBuffer, { tags: fileTags });
 
-        console.log('Arweave upload successful:', response);
+        console.log('Encrypted file Arweave upload successful:', fileUploadResponse);
 
-        const arweaveId = response.id;
+        const arweaveId = fileUploadResponse.id;
         const arweaveUrl = `https://arweave.net/${arweaveId}`;
 
-        // 3. Call the backend's /api/arweave-upload endpoint for metadata and minting
-        console.log('Calling backend for metadata and minting...');
-        const mintResponse = await axios.post('http://localhost:3001/api/arweave-upload', {
-            arweaveId: arweaveId,
-            arweaveUrl: arweaveUrl,
+        // 3. Call the backend to *generate* the metadata JSON
+         console.log('Calling backend to generate metadata before uploading metadata...');
+        const metadataGenerationResponse = await axios.post('http://localhost:3001/api/generate-metadata', {
+            arweaveId: arweaveId, // Pass the Arweave ID from the file upload
+            arweaveUrl: arweaveUrl, // Pass the Arweave URL from the file upload
             encryptionKey: encryptionKey, // Use the stored encryptionKey
-            originalName: file.name, // Use the original file name (file is guaranteed to exist here)
+            originalName: file.name, // Use the original file name
             recipientAddress: recipientAddress, // Get recipientAddress from state
             name: name || `Encrypted PDF: ${file.name}`,
             description: description || 'Encrypted PDF document with secure access'
+        });
+
+        const metadataJson = metadataGenerationResponse.data.metadata;
+         console.log('Generated metadata for upload:', metadataJson);
+
+        // 4. Upload the *metadata JSON* to Arweave using the client-side Irys client
+        console.log('Uploading metadata JSON to Arweave using Irys...');
+         const metadataTags = [
+          { name: 'Content-Type', value: 'application/json' },
+          { name: 'App-Name', value: 'EncryptedPDF-DApp' }, // Replace with your app name
+          // Add other relevant tags if needed
+        ];
+        const metadataUploadResponse = await irys.upload(JSON.stringify(metadataJson), { tags: metadataTags });
+
+        console.log('Metadata Arweave upload successful:', metadataUploadResponse);
+
+        const metadataArweaveId = metadataUploadResponse.id;
+        const metadataArweaveUrl = `https://arweave.net/${metadataArweaveId}`;
+
+        // 5. Call the backend's new /api/mint-nft endpoint to mint the NFT
+        console.log('Calling backend for minting...');
+        const mintResponse = await axios.post('http://localhost:3001/api/mint-nft', {
+            arweaveId: arweaveId, // Arweave ID of the encrypted file
+            arweaveUrl: arweaveUrl, // Arweave URL of the encrypted file
+            metadataArweaveUrl: metadataArweaveUrl, // Arweave URL of the metadata
+            encryptionKey: encryptionKey, // Use the stored encryptionKey
+            originalName: file.name, // Use the original file name
+            recipientAddress: recipientAddress, // Get recipientAddress from state
         });
 
         console.log('Backend minting response:', mintResponse.data);
@@ -221,7 +278,7 @@ const UploadPDF = ({ account, provider }: UploadPDFProps) => {
         setArweaveUploadResult(mintResponse.data);
 
         setLoading(false);
-        setStep(5); // Move to step 5 after successful Arweave upload and backend call
+        setStep(6); // Move to Mint NFT step (step 6 in the new flow)
 
     } catch (err: any) {
         setError(err.message || err.response?.data?.error || 'Error during Arweave upload or minting with Irys');
@@ -229,41 +286,14 @@ const UploadPDF = ({ account, provider }: UploadPDFProps) => {
         setLoading(false);
     }
   };
-  
-  // Utility functions
-  async function fetchWithRetry(url: string, options: RequestInit = {}, retries = 3, backoff = 1000): Promise<Response> {
-    for (let i = 0; i < retries; i++) {
-      try {
-        const response = await fetch(url, options);
-        if (response.ok) return response;
-        throw new Error(`HTTP ${response.status}`);
-      } catch (error) {
-        if (i === retries - 1) throw error;
-        await new Promise(resolve => setTimeout(resolve, backoff * (i + 1)));
-      }
-    }
-    throw new Error('Max retries reached');
-  }
-  
-  function parseEncryptionKey(key: string | object): { key: string; iv: string } {
-    try {
-      if (typeof key === 'object') return key;
-      const parsed = JSON.parse(key);
-      if (parsed.key && parsed.iv) return parsed;
-      throw new Error('Invalid key format');
-    } catch (e) {
-      console.error('Key parsing error:', e);
-      throw new Error('Failed to parse encryption key');
-    }
-  }
-
-// Helper function for retrying failed requests
 
   const handleMint = async (e: React.FormEvent) => {
     e.preventDefault();
+    // Ensure transaction data is available from step 5
     if (!provider || !arweaveUploadResult?.transactionRequest) {
-      setError('Missing wallet provider or transaction data');
-      return;
+      setError('Missing wallet provider or transaction data. Please go back to the previous step.');
+      console.error('Missing required information for handleMint', { provider, transactionRequest: arweaveUploadResult?.transactionRequest });
+        return;
     }
 
     setLoading(true);
@@ -272,7 +302,7 @@ const UploadPDF = ({ account, provider }: UploadPDFProps) => {
     try {
       // Get the signer from the provider
       const signer = await provider.getSigner();
-      
+
       // Send the transaction
       console.log('Sending minting transaction...');
       const txResponse = await signer.sendTransaction(arweaveUploadResult.transactionRequest);
@@ -289,6 +319,7 @@ const UploadPDF = ({ account, provider }: UploadPDFProps) => {
       }
 
       // Store the result using receipt properties
+      // Assuming backend returns tokenId in arweaveUploadResult
       setMintResult({
         transactionHash: receipt.hash, // Use receipt.hash for the transaction hash
         tokenId: arweaveUploadResult.tokenId, // Assuming backend includes this in the response
@@ -296,10 +327,15 @@ const UploadPDF = ({ account, provider }: UploadPDFProps) => {
       });
 
       setLoading(false);
-      setStep(6); // Move to final success step
+      setStep(7); // Move to final complete step (step 7 in the new flow)
     } catch (err: any) {
       setError(err.message || 'Error sending transaction');
       console.error('Transaction error:', err);
+      // Log additional error details if available
+      if (err.data) console.error('Error data:', err.data);
+      if (err.reason) console.error('Error reason:', err.reason);
+      if (err.code) console.error('Error code:', err.code);
+      if (err.transaction) console.error('Failing transaction:', err.transaction);
       setLoading(false);
     }
   };
@@ -330,7 +366,7 @@ const UploadPDF = ({ account, provider }: UploadPDFProps) => {
       // 2. Initialize ethers provider correctly
       const provider = new ethers.BrowserProvider(window.ethereum); // Updated for ethers v6
       const signer = await provider.getSigner();
-      
+
       // 3. Initialize Irys with proper configuration
       const irys = new WebIrys({
         url: "https://node1.bundlr.network",
@@ -344,7 +380,7 @@ const UploadPDF = ({ account, provider }: UploadPDFProps) => {
       await irys.ready();
       console.log('Irys initialized with address:', irys.address);
       return irys;
-    } catch (error) {
+    } catch (error: any) {
       console.error('Irys initialization error:', error);
       throw new Error(`Failed to initialize Irys: ${error.message}`);
     }
@@ -363,43 +399,63 @@ const UploadPDF = ({ account, provider }: UploadPDFProps) => {
   return (
     <div className="bg-white shadow rounded-lg p-6">
       <div className="flex justify-between mb-8">
+        {/* Step 1: Upload */}
         <div className={`flex flex-col items-center ${step >= 1 ? 'text-indigo-600' : 'text-gray-400'}`}>
           <div className={`w-10 h-10 rounded-full flex items-center justify-center border-2 ${step >= 1 ? 'border-indigo-600 bg-indigo-50' : 'border-gray-300'}`}>
             <FileUp size={20} />
           </div>
           <span className="text-xs mt-1">Upload</span>
         </div>
+
+        {/* Step 2: Details */}
         <div className={`flex-1 border-t-2 self-center ${step >= 2 ? 'border-indigo-600' : 'border-gray-300'}`}></div>
         <div className={`flex flex-col items-center ${step >= 2 ? 'text-indigo-600' : 'text-gray-400'}`}>
           <div className={`w-10 h-10 rounded-full flex items-center justify-center border-2 ${step >= 2 ? 'border-indigo-600 bg-indigo-50' : 'border-gray-300'}`}>
-            <Upload size={20} />
+            <CreditCard size={20} />
           </div>
-          <span className="text-xs mt-1">Fund Arweave</span>
+          <span className="text-xs mt-1">Details</span>
         </div>
+
+        {/* Step 3: Get Price */}
         <div className={`flex-1 border-t-2 self-center ${step >= 3 ? 'border-indigo-600' : 'border-gray-300'}`}></div>
         <div className={`flex flex-col items-center ${step >= 3 ? 'text-indigo-600' : 'text-gray-400'}`}>
           <div className={`w-10 h-10 rounded-full flex items-center justify-center border-2 ${step >= 3 ? 'border-indigo-600 bg-indigo-50' : 'border-gray-300'}`}>
-            <Wallet size={20} />
+            <DollarSign size={20} />
           </div>
-          <span className="text-xs mt-1">Fund Bundlr</span>
+          <span className="text-xs mt-1">Get Price</span>
         </div>
+
+        {/* Step 4: Fund Bundlr */}
         <div className={`flex-1 border-t-2 self-center ${step >= 4 ? 'border-indigo-600' : 'border-gray-300'}`}></div>
         <div className={`flex flex-col items-center ${step >= 4 ? 'text-indigo-600' : 'text-gray-400'}`}>
           <div className={`w-10 h-10 rounded-full flex items-center justify-center border-2 ${step >= 4 ? 'border-indigo-600 bg-indigo-50' : 'border-gray-300'}`}>
             <Wallet size={20} />
           </div>
-          <span className="text-xs mt-1">Upload to Arweave</span>
+          <span className="text-xs mt-1">Fund Bundlr</span>
         </div>
+
+        {/* Step 5: Upload to Arweave */}
         <div className={`flex-1 border-t-2 self-center ${step >= 5 ? 'border-indigo-600' : 'border-gray-300'}`}></div>
         <div className={`flex flex-col items-center ${step >= 5 ? 'text-indigo-600' : 'text-gray-400'}`}>
           <div className={`w-10 h-10 rounded-full flex items-center justify-center border-2 ${step >= 5 ? 'border-indigo-600 bg-indigo-50' : 'border-gray-300'}`}>
+            <Upload size={20} />
+          </div>
+          <span className="text-xs mt-1">Upload to Arweave</span>
+        </div>
+
+        {/* Step 6: Mint NFT */}
+        <div className={`flex-1 border-t-2 self-center ${step >= 6 ? 'border-indigo-600' : 'border-gray-300'}`}></div>
+        <div className={`flex flex-col items-center ${step >= 6 ? 'text-indigo-600' : 'text-gray-400'}`}>
+          <div className={`w-10 h-10 rounded-full flex items-center justify-center border-2 ${step >= 6 ? 'border-indigo-600 bg-indigo-50' : 'border-gray-300'}`}>
             <Wallet size={20} />
           </div>
           <span className="text-xs mt-1">Mint NFT</span>
         </div>
-        <div className={`flex-1 border-t-2 self-center ${step >= 6 ? 'border-indigo-600' : 'border-gray-300'}`}></div>
-        <div className={`flex flex-col items-center ${step >= 6 ? 'text-indigo-600' : 'text-gray-400'}`}>
-          <div className={`w-10 h-10 rounded-full flex items-center justify-center border-2 ${step >= 6 ? 'border-indigo-600 bg-indigo-50' : 'border-gray-300'}`}>
+
+        {/* Step 7: Complete */}
+        <div className={`flex-1 border-t-2 self-center ${step >= 7 ? 'border-indigo-600' : 'border-gray-300'}`}></div>
+        <div className={`flex flex-col items-center ${step >= 7 ? 'text-indigo-600' : 'text-gray-400'}`}>
+          <div className={`w-10 h-10 rounded-full flex items-center justify-center border-2 ${step >= 7 ? 'border-indigo-600 bg-indigo-50' : 'border-gray-300'}`}>
             <Wallet size={20} />
           </div>
           <span className="text-xs mt-1">Complete</span>
@@ -444,52 +500,13 @@ const UploadPDF = ({ account, provider }: UploadPDFProps) => {
         </form>
       )}
 
-      {step === 2 && (
-        <form onSubmit={handleGetArweavePrice}>
+      {/* Step 2: Enter Details */}
+      {step === 2 && encryptedFilePath && encryptionKey && file?.name && recipientAddress !== undefined && name !== undefined && description !== undefined && (
+        <form onSubmit={(e) => { e.preventDefault(); setStep(3); }}>
           <div className="mb-6">
             <div className="bg-green-50 text-green-700 p-4 rounded-lg mb-6">
               <p className="font-medium">File successfully encrypted and uploaded!</p>
               <p className="text-sm mt-1">Encrypted file ID: {getFileIdFromPath(encryptedFilePath)}</p>
-            </div>
-
-            <button
-              type="submit"
-              disabled={loading || !encryptedFilePath}
-              className="w-full bg-indigo-600 text-white py-3 rounded-lg font-medium hover:bg-indigo-700 transition-colors disabled:bg-indigo-300"
-            >
-              {loading ? 'Processing...' : 'Get Arweave Upload Price'}
-            </button>
-          </div>
-        </form>
-      )}
-
-      {step === 3 && (
-        <form onSubmit={handleFundBundlr}>
-          <div className="mb-6">
-            <div className="bg-green-50 text-green-700 p-4 rounded-lg mb-6">
-              <p className="font-medium">Arweave price retrieved!</p>
-              {arweavePrice && (
-                <p className="text-sm mt-1">Arweave Price: {ethers.formatUnits(arweavePrice, 'wei')} wei</p>
-              )}
-            </div>
-
-            <button
-              type="submit"
-              disabled={loading || !arweavePrice}
-              className="w-full bg-indigo-600 text-white py-3 rounded-lg font-medium hover:bg-indigo-700 transition-colors disabled:bg-indigo-300"
-            >
-              {loading ? 'Processing...' : 'Fund Bundlr'}
-            </button>
-          </div>
-        </form>
-      )}
-
-      {step === 4 && (
-        <form onSubmit={handleArweaveUpload}>
-          <div className="mb-6">
-            <div className="bg-green-50 text-green-700 p-4 rounded-lg mb-6">
-              <p className="font-medium">Bundlr successfully funded!</p>
-              <p className="text-sm mt-1">Ready to upload to Arweave</p>
             </div>
 
             <div className="mb-4">
@@ -501,7 +518,7 @@ const UploadPDF = ({ account, provider }: UploadPDFProps) => {
                 value={recipientAddress}
                 onChange={(e) => setRecipientAddress(e.target.value)}
                 className="w-full p-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                placeholder="0x..."
+                placeholder="0x..." // Assuming Polygon address format
                 required
               />
             </div>
@@ -531,10 +548,72 @@ const UploadPDF = ({ account, provider }: UploadPDFProps) => {
                 rows={3}
               />
             </div>
+
+             <button
+              type="submit"
+              disabled={loading || !recipientAddress} // Require recipient address to proceed
+              className="w-full bg-indigo-600 text-white py-3 rounded-lg font-medium hover:bg-indigo-700 transition-colors disabled:bg-indigo-300"
+            >
+              Continue
+            </button>
+          </div>
+        </form>
+      )}
+
+      {/* Step 3: Get Total Price */}
+      {step === 3 && encryptedFilePath && encryptionKey && file?.name && recipientAddress && (
+        <form onSubmit={handleGetTotalArweavePrice}>
+          <div className="mb-6">
+            <div className="bg-green-50 text-green-700 p-4 rounded-lg mb-6">
+              <p className="font-medium">Details captured!</p>
+              <p className="text-sm mt-1">Ready to get total Arweave upload price.</p>
+            </div>
+
+            <button
+              type="submit"
+              disabled={loading || !encryptedFilePath || !encryptionKey || !file?.name || !recipientAddress}
+              className="w-full bg-indigo-600 text-white py-3 rounded-lg font-medium hover:bg-indigo-700 transition-colors disabled:bg-indigo-300"
+            >
+              {loading ? 'Processing...' : 'Get Total Arweave Upload Price'}
+            </button>
+          </div>
+        </form>
+      )}
+
+      {/* Step 4: Fund Bundlr */}
+      {step === 4 && arweavePrice && provider && (
+        <form onSubmit={handleFundBundlr}>
+          <div className="mb-6">
+            <div className="bg-green-50 text-green-700 p-4 rounded-lg mb-6">
+              <p className="font-medium">Total Arweave price retrieved!</p>
+              {arweavePrice && (
+                <p className="text-sm mt-1">Total Arweave Price: {ethers.formatUnits(arweavePrice, 'wei')} wei</p>
+              )}
+            </div>
+
+            <button
+              type="submit"
+              disabled={loading || !arweavePrice}
+              className="w-full bg-indigo-600 text-white py-3 rounded-lg font-medium hover:bg-indigo-700 transition-colors disabled:bg-indigo-300"
+            >
+              {loading ? 'Processing...' : 'Fund Bundlr'}
+            </button>
+          </div>
+        </form>
+      )}
+
+      {/* Step 5: Upload to Arweave */}
+      {step === 5 && encryptedFilePath && encryptionKey && file?.name && recipientAddress && provider && (
+        <form onSubmit={handleArweaveUpload}>
+          <div className="mb-6">
+            <div className="bg-green-50 text-green-700 p-4 rounded-lg mb-6">
+              <p className="font-medium">Bundlr successfully funded!</p>
+              <p className="text-sm mt-1">Ready to upload encrypted file and metadata to Arweave.</p>
+            </div>
           </div>
           <button
             type="submit"
-            disabled={loading || !recipientAddress}
+            disabled={loading}
             className="w-full bg-indigo-600 text-white py-3 rounded-lg font-medium hover:bg-indigo-700 transition-colors disabled:bg-indigo-300"
           >
             {loading ? 'Processing...' : 'Upload to Arweave'}
@@ -542,27 +621,39 @@ const UploadPDF = ({ account, provider }: UploadPDFProps) => {
         </form>
       )}
 
-      {step === 5 && arweaveUploadResult && (
+      {/* Step 6: Mint NFT */}
+      {step === 6 && arweaveUploadResult && provider && (
         <div>
           <div className="bg-green-50 text-green-700 p-6 rounded-lg mb-6">
-            <h3 className="font-bold text-lg mb-2">Ready to Mint NFT!</h3>
+            <h3 className="font-bold text-lg mb-2">Files uploaded to Arweave!</h3>
             <div className="space-y-2 text-sm">
               <p><span className="font-medium">File:</span> {file?.name}</p>
               <p><span className="font-medium">Recipient:</span> {recipientAddress}</p>
               <p>
-                <span className="font-medium">Arweave URL:</span>{' '}
-                <a 
-                  href={arweaveUploadResult.arweaveUrl} 
-                  target="_blank" 
+                <span className="font-medium">Encrypted File Arweave URL:</span>{' '}
+                <a
+                  href={arweaveUploadResult.arweaveUrl}
+                  target="_blank"
                   rel="noopener noreferrer"
                   className="underline"
                 >
                   {arweaveUploadResult.arweaveUrl}
                 </a>
               </p>
+               <p>
+                <span className="font-medium">Metadata Arweave URL:</span>{' '}
+                <a
+                  href={arweaveUploadResult.metadataUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="underline"
+                >
+                  {arweaveUploadResult.metadataUrl}
+                </a>
+              </p>
             </div>
           </div>
-          
+
           <button
             onClick={handleMint}
             disabled={loading}
@@ -573,7 +664,8 @@ const UploadPDF = ({ account, provider }: UploadPDFProps) => {
         </div>
       )}
 
-      {step === 6 && mintResult && (
+       {/* Step 7: Complete */}
+       {step === 7 && mintResult && (
         <div>
           <div className="bg-green-50 text-green-700 p-6 rounded-lg mb-6">
             <h3 className="font-bold text-lg mb-2">NFT Successfully Minted! 🎉</h3>
@@ -593,7 +685,7 @@ const UploadPDF = ({ account, provider }: UploadPDFProps) => {
               <p>
                 <span className="font-medium">Metadata:</span>{' '}
                 <a 
-                  href={mintResult.metadataUrl} 
+                  href={mintResult.metadataUrl}
                   target="_blank" 
                   rel="noopener noreferrer"
                   className="underline"
@@ -619,4 +711,4 @@ const UploadPDF = ({ account, provider }: UploadPDFProps) => {
   );
 };
 
-export default UploadPDF;
+export default UploadPDF; 

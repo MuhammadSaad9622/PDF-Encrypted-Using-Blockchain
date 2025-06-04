@@ -51,20 +51,20 @@ const ViewPDF = ({ account, provider }: ViewPDFProps) => {
         
         // Fetch and decrypt PDF
         const decryptResponse = await axios.post(`http://localhost:3001/api/decrypt/${tokenId}`, {
-          arweaveId,
           walletAddress: account
         }, {
           responseType: 'blob'
         });
 
-        console.log('Decryption response data:', decryptResponse.data);
+        console.log('Decryption response received:', decryptResponse);
+        console.log('Decrypted data type:', typeof decryptResponse.data);
+        if (decryptResponse.data instanceof Blob) {
+          console.log('Decrypted data is a Blob, size:', decryptResponse.data.size);
+        }
 
+        // Create Blob from response data, ensuring correct type
         const pdfBlob = new Blob([decryptResponse.data], { type: 'application/pdf' });
-        console.log('Created PDF Blob:', pdfBlob);
-
         const pdfUrl = URL.createObjectURL(pdfBlob);
-        console.log('Generated PDF URL:', pdfUrl);
-
         setPdfUrl(pdfUrl);
       } catch (err: any) {
         setError(err.message || 'Error fetching NFT data');

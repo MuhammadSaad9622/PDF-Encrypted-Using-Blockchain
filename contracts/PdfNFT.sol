@@ -31,7 +31,7 @@ contract PdfNFT is ERC721URIStorage, Ownable, ReentrancyGuard, ERC721Enumerable 
         string memory arweaveId,
         string memory iv,
         bytes32 encryptionKeyHash
-    ) public onlyOwner nonReentrant returns (uint256) {
+    ) public nonReentrant returns (uint256) {
         _tokenIds.increment();
         uint256 newTokenId = _tokenIds.current();
         
