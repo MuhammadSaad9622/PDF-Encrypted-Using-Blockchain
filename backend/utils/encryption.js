@@ -13,40 +13,23 @@ export const encryptFile = async (inputPath, outputPath) => {
     // Read file as buffer
     const fileBuffer = await readFileAsync(inputPath);
     
-    // Log original file buffer size
-    console.log('Original file buffer size:', fileBuffer.length);
-    
     // Generate random key and IV
     const key = CryptoJS.lib.WordArray.random(32); // 256-bit key
     const iv = CryptoJS.lib.WordArray.random(16);  // 128-bit IV
     
-    // Convert buffer to WordArray properly
-    const wordArray = CryptoJS.lib.WordArray.create(
-      Array.from(new Uint8Array(fileBuffer))
-    );
-    
-    // Log WordArray size
-    console.log('WordArray size after creation:', wordArray.sigBytes);
+    // Convert buffer to WordArray
+    const wordArray = CryptoJS.lib.WordArray.create(fileBuffer);
     
     // Encrypt with explicit parameters
     const encrypted = CryptoJS.AES.encrypt(wordArray, key, {
       iv: iv,
       mode: CryptoJS.mode.CBC,
       padding: CryptoJS.pad.Pkcs7,
-      format: CryptoJS.format.OpenSSL // Ensures consistent output format
+      format: CryptoJS.format.Hex // Use Hex format for raw ciphertext
     });
     
-    // Log encrypted data format and size
-    console.log('Encrypted data format (CryptoJS):', encrypted.format);
-    console.log('Encrypted data size (CryptoJS):', encrypted.ciphertext.sigBytes);
-    
-    // Write encrypted data (already base64 encoded by CryptoJS)
-    await writeFileAsync(outputPath, encrypted.toString());
-    
-    // Log output file path and size
-    const encryptedFileSize = fs.statSync(outputPath).size;
-    console.log('Encrypted file written to:', outputPath);
-    console.log('Encrypted file size on disk:', encryptedFileSize);
+    // Write only the raw ciphertext (Hex format)
+    await writeFileAsync(outputPath, encrypted.ciphertext.toString());
     
     // Return key details as JSON string
     return JSON.stringify({
@@ -60,42 +43,78 @@ export const encryptFile = async (inputPath, outputPath) => {
   }
 };
 
-/**
- * Robust decryption function with proper data handling
- */
 export const decryptData = (encryptedData, encryptionDetails) => {
   try {
-    console.log('Decrypting data of length:', encryptedData.length);
     const { key, iv } = encryptionDetails;
-    console.log('Using key and IV for decryption');
+
+    // Parse key and IV as HEX
+    const parsedKey = CryptoJS.enc.Hex.parse(key);
+    const parsedIv = CryptoJS.enc.Hex.parse(iv);
 
     // Decrypt the data
     const decrypted = CryptoJS.AES.decrypt(
-      encryptedData, // Pass the Base64 encoded string directly
-      CryptoJS.enc.Hex.parse(key),
+      { ciphertext: CryptoJS.enc.Hex.parse(encryptedData) },
+      parsedKey,
       {
-        iv: CryptoJS.enc.Hex.parse(iv),
+        iv: parsedIv,
         mode: CryptoJS.mode.CBC,
         padding: CryptoJS.pad.Pkcs7
       }
     );
 
-    console.log('Decrypted WordArray size:', decrypted.sigBytes);
-
-    // Convert the decrypted WordArray to a Uint8Array and then to a Buffer
-    const buffer = new Uint8Array(decrypted.sigBytes);
-    for (let i = 0; i < decrypted.sigBytes; i++) {
-      buffer[i] = (decrypted.words[i >>> 2] >>> (24 - (i % 4) * 8)) & 0xff;
-    }    
-
-    console.log('Final buffer size:', buffer.length);
-    return buffer;
+    // Convert directly to Buffer
+    return Buffer.from(decrypted.toString(CryptoJS.enc.Latin1), 'latin1');
   } catch (error) {
     console.error('Error decrypting data:', error);
     throw error;
   }
 };
 
+/**
+ * Robust decryption function with proper data handling
+ */
+// export const decryptData = (encryptedData, encryptionDetails) => {
+//   try {
+//     console.log('Decrypting data of length:', encryptedData.length);
+//     const { key, iv } = encryptionDetails;
+//     console.log('Using key and IV for decryption');
+
+//     // Parse key and IV as HEX
+//     const parsedKey = CryptoJS.enc.Hex.parse(key);
+//     const parsedIv = CryptoJS.enc.Hex.parse(iv);
+
+//     // Create CipherParams object for better handling
+//     const cipherParams = CryptoJS.lib.CipherParams.create({
+//       ciphertext: CryptoJS.enc.Base64.parse(encryptedData)
+//     });
+
+//     // Decrypt with explicit parameters
+//     const decrypted = CryptoJS.AES.decrypt(
+//       cipherParams,
+//       parsedKey,
+//       {
+//         iv: parsedIv,
+//         mode: CryptoJS.mode.CBC,
+//         padding: CryptoJS.pad.Pkcs7
+//       }
+//     );
+
+//     console.log('Decrypted WordArray size:', decrypted.sigBytes);
+
+//     // Convert directly to Uint8Array
+//     const uint8Array = new Uint8Array(decrypted.sigBytes);
+//     for (let i = 0; i < decrypted.sigBytes; i++) {
+//       const byte = (decrypted.words[i >>> 2] >>> (24 - (i % 4) * 8)) & 0xff;
+//       uint8Array[i] = byte;
+//     }
+
+//     console.log('Final Uint8Array size:', uint8Array.length);
+//     return Buffer.from(uint8Array);
+//   } catch (error) {
+//     console.error('Error decrypting data:', error);
+//     throw error;
+//   }
+// };
 // Helper function for actual decryption (removed as logic is now in decryptData)
 /*
 function decryptWithDetails(encryptedData, { key, iv }) {

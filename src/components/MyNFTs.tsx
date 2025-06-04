@@ -87,15 +87,16 @@ const MyNFTs = ({ account, provider }: MyNFTsProps) => {
           const tokenURI = await contract.tokenURI(tokenId);
           console.log('fetchNFTs: Got token URI:', tokenURI);
 
-          // Fetch metadata from Arweave
-          console.log('fetchNFTs: Fetching metadata from Arweave...', tokenURI);
-          const response = await fetch(tokenURI);
+          // Fetch metadata from Arweave via the backend
+          console.log('fetchNFTs: Fetching metadata via backend for token ID:', tokenId.toString());
+          const response = await fetch(`http://localhost:3001/api/nft-metadata/${tokenId.toString()}`);
           if (!response.ok) {
-             console.error('fetchNFTs: Failed to fetch metadata', response.status, response.statusText);
-             throw new Error(`Failed to fetch metadata from ${tokenURI}`);
+             console.error('fetchNFTs: Failed to fetch metadata via backend', response.status, response.statusText);
+             // It might be useful to throw an error here or set an error state if fetching metadata fails
+             throw new Error(`Failed to fetch metadata via backend for token ${tokenId.toString()}`);
           }
           const metadata = await response.json();
-          console.log('fetchNFTs: Metadata received:', metadata);
+          console.log('fetchNFTs: Metadata received via backend:', metadata);
           
           nftPromises.push({
             tokenId: tokenId.toString(),

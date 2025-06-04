@@ -41,9 +41,17 @@ const ViewPDF = ({ account, provider }: ViewPDFProps) => {
         // Get NFT data
         const tokenURI = await contract.tokenURI(tokenId);
         
-        // Fetch metadata
-        const response = await fetch(tokenURI);
+        console.log('fetchNFTData: Got token URI:', tokenURI);
+        
+        // Fetch metadata from Arweave via the backend
+        console.log('fetchNFTData: Fetching metadata via backend for token ID:', tokenId);
+        const response = await fetch(`http://localhost:3001/api/nft-metadata/${tokenId}`);
+        if (!response.ok) {
+           console.error('fetchNFTData: Failed to fetch metadata via backend', response.status, response.statusText);
+           throw new Error(`Failed to fetch metadata via backend: ${response.statusText}`);
+        }
         const metadata = await response.json();
+        console.log('fetchNFTData: Metadata received via backend:', metadata);
         setMetadata(metadata);
 
         // Get the Arweave ID from metadata
@@ -57,9 +65,23 @@ const ViewPDF = ({ account, provider }: ViewPDFProps) => {
         });
 
         console.log('Decryption response received:', decryptResponse);
-        console.log('Decrypted data type:', typeof decryptResponse.data);
+        console.log('Decrypted data type (should be Blob):', typeof decryptResponse.data);
         if (decryptResponse.data instanceof Blob) {
           console.log('Decrypted data is a Blob, size:', decryptResponse.data.size);
+          console.log('Decrypted data Blob type:', decryptResponse.data.type);
+
+          // Read the first few bytes of the Blob to check for PDF signature
+          const reader = new FileReader();
+          reader.onload = function(event) {
+            if (event.target?.result) {
+              const arrayBuffer = event.target.result as ArrayBuffer;
+              const uint8Array = new Uint8Array(arrayBuffer);
+              const pdfSignature = String.fromCharCode(...uint8Array.slice(0, 4));
+              console.log('First 4 bytes of decrypted data (should be %PDF-):', pdfSignature);
+            }
+          };
+          reader.readAsArrayBuffer(decryptResponse.data.slice(0, 4));
+
         }
 
         // Create Blob from response data, ensuring correct type

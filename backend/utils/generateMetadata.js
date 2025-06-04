@@ -7,7 +7,7 @@ dotenv.config();
  * @param {Object} params - Metadata parameters
  * @returns {Object} - NFT metadata object
  */
-export const generateMetadata = ({ name, description, arweaveUrl, encryptionKey, originalName }) => {
+export const generateMetadata = ({ name, description, arweaveUrl, encryptionKey, originalName, originalSize }) => {
   return {
     name,
     description,
@@ -32,7 +32,8 @@ export const generateMetadata = ({ name, description, arweaveUrl, encryptionKey,
       file: {
         name: originalName,
         type: "application/pdf",
-        uri: arweaveUrl
+        uri: arweaveUrl,
+        size: originalSize
       },
       encryption: encryptionKey // Store the full encryption key object
     }

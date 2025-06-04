@@ -27,6 +27,9 @@ export const encryptAndUpload = async (req, res) => {
     // Save original file temporarily
     await pdfFile.mv(originalFilePath);
     
+    // Get original file size
+    const originalFileSize = fs.statSync(originalFilePath).size;
+
     // Encrypt the file
     const encryptionKey = await encryptFile(originalFilePath, encryptedFilePath);
     
@@ -41,7 +44,8 @@ export const encryptAndUpload = async (req, res) => {
       fileId,
       encryptionKey,
       encryptedFilePath: encryptedFilePath, // Return the path to the encrypted file
-      originalName: pdfFile.name
+      originalName: pdfFile.name,
+      originalSize: originalFileSize // Include original file size in the response
       // arweaveId and arweaveUrl will be returned after the Arweave upload step
     });
   } catch (error) {
@@ -51,6 +55,57 @@ export const encryptAndUpload = async (req, res) => {
         fs.unlinkSync(req.files.pdf.tempFilePath);
     }
     return res.status(500).json({ error: error.message });
+  }
+};
+
+export const uploadAndEncrypt = async (req, res) => {
+  try {
+    if (!req.files || !req.files.pdf) {
+      return res.status(400).json({ error: 'No PDF file uploaded' });
+    }
+
+    const pdfFile = req.files.pdf;
+    const fileId = crypto.randomUUID();
+    const originalFilePath = path.join(tempDir, `${fileId}_original.pdf`);
+    const encryptedFilePath = path.join(tempDir, `${fileId}_encrypted.pdf`);
+    
+    // Save original file temporarily
+    await pdfFile.mv(originalFilePath);
+    
+    // Encrypt the file
+    const encryptionKey = await encryptFile(originalFilePath, encryptedFilePath);
+    
+    // Upload to Arweave
+    const arweaveResult = await uploadToArweave(encryptedFilePath);
+    
+    // Clean up temporary files
+    fs.unlinkSync(originalFilePath);
+    fs.unlinkSync(encryptedFilePath);
+    
+    // Return the necessary data for NFT minting
+    res.json({
+      arweaveId: arweaveResult.id,
+      arweaveUrl: arweaveResult.url,
+      encryptionKey,
+      metadata: {
+        name: pdfFile.name,
+        description: 'Encrypted PDF NFT',
+        image: arweaveResult.url,
+        properties: {
+          file: {
+            name: pdfFile.name,
+            type: pdfFile.mimetype,
+            size: pdfFile.size
+          },
+          encryption: {
+            algorithm: 'AES-256-CBC'
+          }
+        }
+      }
+    });
+  } catch (error) {
+    console.error('Error in uploadAndEncrypt:', error);
+    res.status(500).json({ error: 'Failed to process PDF' });
   }
 };
 
@@ -174,132 +229,124 @@ export const mintNFT = async (req, res) => {
   console.log('MintNFT endpoint hit - this should not happen in the new flow unless intended.');
   return res.status(405).json({ error: 'Method not allowed in this flow.' });
 };
-
 export const decryptFile = async (req, res) => {
   try {
-    console.log('Incoming request: POST /api/decrypt/' + req.params.tokenId);
-    console.log('Attempting to decrypt file...');
-    
     const { walletAddress } = req.body;
     const tokenId = req.params.tokenId;
 
+    // Initialize provider and contract
+    const provider = new ethers.JsonRpcProvider(process.env.POLYGON_MAINNET_RPC_URL || 'https://polygon-rpc.com');
+    const contract = new ethers.Contract(
+      contractAddress,
+      [
+        'function ownerOf(uint256) view returns (address)',
+        'function tokenURI(uint256) view returns (string)'
+      ],
+      provider
+    );
+
+    // Verify ownership
+    const owner = await contract.ownerOf(tokenId);
+    if (owner.toLowerCase() !== walletAddress.toLowerCase()) {
+      return res.status(403).json({ error: 'Not authorized' });
+    }
+
+    // Get metadata
+    const tokenURI = await contract.tokenURI(tokenId);
+    const metadataResponse = await fetch(tokenURI);
+    if (!metadataResponse.ok) throw new Error('Metadata fetch failed');
+    const metadata = await metadataResponse.json();
+    
+    // Parse encryption details
+    let encryptionDetails = metadata.properties?.encryption;
+    if (typeof encryptionDetails === 'string') {
+      encryptionDetails = JSON.parse(encryptionDetails);
+    }
+    if (!encryptionDetails?.key || !encryptionDetails?.iv) {
+      throw new Error('Invalid encryption details');
+    }
+
+    // Extract Arweave ID
+    const arweaveId = metadata.properties?.file?.uri?.split('/').pop();
+    if (!arweaveId) throw new Error('Arweave ID not found');
+
+    // Fetch encrypted data
+    const response = await fetch(`https://arweave.net/${arweaveId}`);
+    if (!response.ok) throw new Error('Failed to fetch encrypted data');
+    
+    // Get as hex string
+    const encryptedData = await response.text();
+
+    // Decrypt the file
+    const decrypted = decryptData(encryptedData, encryptionDetails);
+
+    // Send decrypted file
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="${metadata.properties.file.name}"`);
+    res.send(decrypted);
+
+  } catch (error) {
+    console.error('Decryption failed:', error);
+    res.status(500).json({ 
+      error: 'PDF decryption failed',
+      message: error.message
+    });
+  }
+};
+// New controller function to fetch NFT metadata from Arweave via backend
+export const getNFTMetadata = async (req, res) => {
+  try {
+    console.log('Incoming request: GET /api/nft-metadata/' + req.params.tokenId);
+    console.log('Attempting to fetch NFT metadata...');
+
+    const tokenId = req.params.tokenId;
+
     // Validate input parameters
-    if (!walletAddress || !tokenId) {
-      console.log('Missing required parameters for decryption (walletAddress or tokenId)');
+    if (!tokenId) {
+      console.log('Missing required parameters for fetching metadata (tokenId)');
       return res.status(400).json({ error: 'Missing required parameters' });
     }
 
-    console.log('Decrypting file for token:', tokenId);
+    console.log('Fetching metadata for token:', tokenId);
 
     // Initialize Ethereum provider
     const provider = new ethers.JsonRpcProvider(process.env.POLYGON_MAINNET_RPC_URL || 'https://polygon-rpc.com');
 
     if (!contractAddress) {
-      console.error('Contract address not loaded in decryptFile');
-      return res.status(500).json({ error: 'Contract address not configured in backend.' });
+      console.error('Contract address not loaded in getNFTMetadata');
+      return res.status(500).json({ error: 'NFT contract address not configured in backend.' });
     }
 
     // Initialize contract instance
     const contract = new ethers.Contract(
       contractAddress,
-      ['function ownerOf(uint256) view returns (address)', 'function tokenURI(uint256) view returns (string)'],
+      ['function tokenURI(uint256 tokenId) view returns (string)'],
       provider
     );
 
-    // Verify NFT ownership
-    const owner = await contract.ownerOf(tokenId);
-    if (owner.toLowerCase() !== walletAddress.toLowerCase()) {
-      console.log('Ownership verification failed. Owner:', owner, 'Wallet:', walletAddress);
-      return res.status(403).json({ error: 'Not authorized to decrypt this file' });
-    }
-
-    console.log('Ownership verified for:', walletAddress);
-
+    console.log('getNFTMetadata: Contract instance created. Calling tokenURI...');
     // Get tokenURI from contract
     const tokenURI = await contract.tokenURI(tokenId);
-    console.log('Fetched tokenURI:', tokenURI);
+    console.log('getNFTMetadata: Fetched tokenURI:', tokenURI);
 
-    // Fetch metadata from tokenURI
-    console.log('Fetching metadata from Arweave...', tokenURI);
+    // Fetch metadata from tokenURI (Arweave)
+    console.log('getNFTMetadata: Fetching metadata from Arweave...', tokenURI);
     const metadataResponse = await fetch(tokenURI);
     if (!metadataResponse.ok) {
-      console.error('Failed to fetch metadata from Arweave', metadataResponse.status, metadataResponse.statusText);
-      throw new Error('Failed to fetch metadata from Arweave');
+      console.error('getNFTMetadata: Failed to fetch metadata from Arweave', metadataResponse.status, metadataResponse.statusText);
+      throw new Error(`Failed to fetch metadata from Arweave: ${metadataResponse.statusText}`);
     }
 
     const metadata = await metadataResponse.json();
-    console.log('Full metadata structure:', JSON.stringify(metadata, null, 2));
+    console.log('getNFTMetadata: Metadata received:', metadata);
 
-    // Parse encryption details
-    let encryptionDetails;
-    try {
-      if (typeof metadata.properties?.encryption === 'string') {
-        encryptionDetails = JSON.parse(metadata.properties.encryption);
-      } else {
-        encryptionDetails = metadata.properties?.encryption;
-      }
-    } catch (e) {
-      console.error('Failed to parse encryption details:', e);
-      throw new Error('Invalid encryption details format');
-    }
-
-    console.log('Parsed encryption details:', encryptionDetails);
-
-    // Validate encryption details
-    if (!encryptionDetails || 
-        typeof encryptionDetails.key !== 'string' || 
-        encryptionDetails.key.length === 0 || 
-        typeof encryptionDetails.iv !== 'string' || 
-        encryptionDetails.iv.length === 0) {
-      console.error('Invalid encryption details:', encryptionDetails);
-      throw new Error('Invalid encryption key or IV format');
-    }
-
-    // Extract Arweave ID from file URI
-    if (!metadata.properties?.file?.uri) {
-      console.error('File URI not found in metadata');
-      throw new Error('File URI not found in metadata');
-    }
-
-    const arweaveId = metadata.properties.file.uri.split('/').pop();
-    if (!arweaveId) {
-      console.error('Arweave ID not found in metadata file URI', metadata.properties.file.uri);
-      throw new Error('Arweave ID not found in metadata');
-    }
-    console.log('Extracted Arweave ID for file data:', arweaveId);
-
-    // Fetch encrypted data from Arweave
-    console.log('Fetching encrypted data from Arweave...', `https://arweave.net/${arweaveId}`);
-    const response = await fetch(`https://arweave.net/${arweaveId}`);
-    if (!response.ok) {
-      console.error('Failed to fetch encrypted data from Arweave', response.status, response.statusText);
-      throw new Error('Failed to fetch encrypted data from Arweave');
-    }
-
-    const encryptedData = await response.text();
-    console.log('Encrypted data length:', encryptedData.length);
-
-    // Decrypt the file
-    console.log('Decrypting data using encryption utility...');
-    const decrypted = decryptData(encryptedData, {
-      key: encryptionDetails.key,
-      iv: encryptionDetails.iv
-    });
-    console.log('Decrypted data length:', decrypted.length);
-
-    // Log the first few bytes of the decrypted data to inspect
-    console.log('First 10 bytes of decrypted data:', decrypted.slice(0, 10));
-
-    // Send the decrypted file
-    console.log('Sending decrypted PDF data...');
-    res.setHeader('Content-Type', 'application/pdf');
-    res.setHeader('Content-Disposition', `attachment; filename=${metadata.properties.file.name}`);
-    res.end(decrypted);
+    // Send the metadata back to the frontend
+    res.status(200).json(metadata);
 
   } catch (error) {
-    console.error('Error in decryptFile:', error);
+    console.error('Error in getNFTMetadata:', error);
     res.status(500).json({ 
-      error: 'Failed to decrypt file',
+      error: 'Failed to fetch NFT metadata',
       details: error.message 
     });
   }

@@ -1,5 +1,5 @@
 import express from 'express';
-import { encryptAndUpload, decryptFile, getArweaveUploadPrice, generateMetadataJson, serveEncryptedFile, mintNftWithArweaveDetails, getTotalArweavePrice } from '../controllers/pdfController.js';
+import { encryptAndUpload,uploadAndEncrypt, decryptFile, getArweaveUploadPrice, generateMetadataJson, serveEncryptedFile, mintNftWithArweaveDetails, getTotalArweavePrice, getNFTMetadata } from '../controllers/pdfController.js';
 
 const router = express.Router();
 
@@ -7,6 +7,9 @@ router.post('/encrypt-upload', encryptAndUpload);
 
 // Route for decrypting PDF (requires NFT ownership)
 router.post('/decrypt/:tokenId', decryptFile);
+
+// New route to fetch NFT metadata from Arweave via backend
+router.get('/nft-metadata/:tokenId', getNFTMetadata);
 
 // Route to get Arweave upload price for file only (can be removed later if not needed)
 router.post('/arweave-price', getArweaveUploadPrice);
