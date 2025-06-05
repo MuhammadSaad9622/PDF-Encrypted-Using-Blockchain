@@ -89,7 +89,7 @@ const MyNFTs = ({ account, provider }: MyNFTsProps) => {
 
           // Fetch metadata from Arweave via the backend
           console.log('fetchNFTs: Fetching metadata via backend for token ID:', tokenId.toString());
-          const response = await fetch(`http://localhost:3001/api/nft-metadata/${tokenId.toString()}`);
+          const response = await fetch(`https://pdf-encrypted-using-blockchain-2.onrender.com/api/nft-metadata/${tokenId.toString()}`);
           if (!response.ok) {
              console.error('fetchNFTs: Failed to fetch metadata via backend', response.status, response.statusText);
              // It might be useful to throw an error here or set an error state if fetching metadata fails

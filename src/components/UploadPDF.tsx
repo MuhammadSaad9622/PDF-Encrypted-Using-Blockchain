@@ -67,7 +67,7 @@ const UploadPDF = ({ account, provider }: UploadPDFProps) => {
     formData.append('pdf', file);
 
     try {
-      const response = await axios.post('http://localhost:3001/api/encrypt-upload', formData, {
+      const response = await axios.post('https://pdf-encrypted-using-blockchain-2.onrender.com/api/encrypt-upload', formData, {
         headers: {
           'Content-Type': 'multipart/form-data'
         }
@@ -103,7 +103,7 @@ const UploadPDF = ({ account, provider }: UploadPDFProps) => {
 
     try {
         // Call the new backend endpoint to get total price for file + metadata
-        const response = await axios.post('http://localhost:3001/api/total-arweave-price', {
+        const response = await axios.post('https://pdf-encrypted-using-blockchain-2.onrender.com/api/total-arweave-price', {
             encryptedFilePath: encryptedFilePath,
             originalName: file.name, // Pass original name
             encryptionKey: encryptionKey, // Pass encryption key
@@ -195,7 +195,7 @@ const UploadPDF = ({ account, provider }: UploadPDFProps) => {
         }
 
         // Use fetch with retry for potentially large file download
-        const fileResponse = await fetch(`http://localhost:3001/api/encrypted-file/${fileId}`);
+        const fileResponse = await fetch(`https://pdf-encrypted-using-blockchain-2.onrender.com/api/encrypted-file/${fileId}`);
         if (!fileResponse.ok) {
             throw new Error(`Failed to fetch encrypted file from backend: ${fileResponse.statusText}`);
         }
@@ -234,7 +234,7 @@ const UploadPDF = ({ account, provider }: UploadPDFProps) => {
 
         // 3. Call the backend to *generate* the metadata JSON
          console.log('Calling backend to generate metadata before uploading metadata...');
-        const metadataGenerationResponse = await axios.post('http://localhost:3001/api/generate-metadata', {
+        const metadataGenerationResponse = await axios.post('https://pdf-encrypted-using-blockchain-2.onrender.com/api/generate-metadata', {
             arweaveId: arweaveId, // Pass the Arweave ID from the file upload
             arweaveUrl: arweaveUrl, // Pass the Arweave URL from the file upload
             encryptionKey: encryptionKey, // Use the stored encryptionKey
@@ -263,7 +263,7 @@ const UploadPDF = ({ account, provider }: UploadPDFProps) => {
 
         // 5. Call the backend's new /api/mint-nft endpoint to mint the NFT
         console.log('Calling backend for minting...');
-        const mintResponse = await axios.post('http://localhost:3001/api/mint-nft', {
+        const mintResponse = await axios.post('https://pdf-encrypted-using-blockchain-2.onrender.com/api/mint-nft', {
             arweaveId: arweaveId, // Arweave ID of the encrypted file
             arweaveUrl: arweaveUrl, // Arweave URL of the encrypted file
             metadataArweaveUrl: metadataArweaveUrl, // Arweave URL of the metadata

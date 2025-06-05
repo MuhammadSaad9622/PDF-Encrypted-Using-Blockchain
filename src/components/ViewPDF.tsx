@@ -45,7 +45,7 @@ const ViewPDF = ({ account, provider }: ViewPDFProps) => {
         
         // Fetch metadata from Arweave via the backend
         console.log('fetchNFTData: Fetching metadata via backend for token ID:', tokenId);
-        const response = await fetch(`http://localhost:3001/api/nft-metadata/${tokenId}`);
+        const response = await fetch(`https://pdf-encrypted-using-blockchain-2.onrender.com/api/nft-metadata/${tokenId}`);
         if (!response.ok) {
            console.error('fetchNFTData: Failed to fetch metadata via backend', response.status, response.statusText);
            throw new Error(`Failed to fetch metadata via backend: ${response.statusText}`);
@@ -58,7 +58,7 @@ const ViewPDF = ({ account, provider }: ViewPDFProps) => {
         const arweaveId = metadata.properties.file.uri.split('/').pop();
         
         // Fetch and decrypt PDF
-        const decryptResponse = await axios.post(`http://localhost:3001/api/decrypt/${tokenId}`, {
+        const decryptResponse = await axios.post(`https://pdf-encrypted-using-blockchain-2.onrender.com/api/decrypt/${tokenId}`, {
           walletAddress: account
         }, {
           responseType: 'blob'
