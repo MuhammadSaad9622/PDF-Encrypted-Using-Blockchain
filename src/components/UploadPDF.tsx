@@ -674,7 +674,7 @@ const UploadPDF = ({ account, provider }: UploadPDFProps) => {
               <p>
                 <span className="font-medium">Transaction:</span>{' '}
                 <a 
-                  href={`https://mumbai.polygonscan.com/tx/${mintResult.transactionHash}`} 
+                  href={`https://polygon-rpc.com/tx/${mintResult.transactionHash}`} 
                   target="_blank" 
                   rel="noopener noreferrer"
                   className="underline"
