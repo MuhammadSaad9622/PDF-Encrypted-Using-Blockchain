@@ -135,7 +135,7 @@ export const generateMetadataJson = async (req, res) => {
     // This function now receives arweaveId and arweaveUrl from the frontend
     // And generates and returns the metadata JSON
     try {
-        const { arweaveId, arweaveUrl, encryptionKey, originalName, recipientAddress } = req.body;
+        const { arweaveId, arweaveUrl, encryptionKey, originalName, recipientAddress ,name,description } = req.body;
 
         if (!arweaveId || !arweaveUrl || !encryptionKey || !originalName || !recipientAddress) {
              return res.status(400).json({ error: 'Missing required parameters (arweaveId, arweaveUrl, encryptionKey, originalName, or recipientAddress)' });
@@ -157,7 +157,8 @@ export const generateMetadataJson = async (req, res) => {
         // Generate metadata (using the received arweaveUrl)
         const metadata = generateMetadata({
             name: `Encrypted PDF: ${originalName}`,
-            description: `Encrypted PDF document with secure access`,
+            name1:name,
+            description:description ,
             arweaveUrl: arweaveUrl,
             encryptionKey: parsedEncryptionKey, // Use the parsed object here
             originalName

@@ -170,12 +170,12 @@ const MyNFTs = ({ account, provider }: MyNFTsProps) => {
                 <span className="font-medium text-gray-500">File:</span>{' '}
                 <span className="text-gray-900">{nft.properties.file.name}</span>
               </div>
-              <div className="text-sm">
+              {/* <div className="text-sm">
                 <span className="font-medium text-gray-500">Size:</span>{' '}
                 <span className="text-gray-900">
                   {(nft.properties.file.size / 1024).toFixed(2)} KB
                 </span>
-              </div>
+              </div> */}
             </div>
 
             <div className="mt-6">

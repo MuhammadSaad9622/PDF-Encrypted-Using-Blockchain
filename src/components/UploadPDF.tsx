@@ -240,7 +240,7 @@ const UploadPDF = ({ account, provider }: UploadPDFProps) => {
             encryptionKey: encryptionKey, // Use the stored encryptionKey
             originalName: file.name, // Use the original file name
             recipientAddress: recipientAddress, // Get recipientAddress from state
-            name: name || `Encrypted PDF: ${file.name}`,
+            name: name,
             description: description || 'Encrypted PDF document with secure access'
         });
 
@@ -523,7 +523,7 @@ const UploadPDF = ({ account, provider }: UploadPDFProps) => {
               />
             </div>
 
-            <div className="mb-4">
+            {/* <div className="mb-4">
               <label className="block text-gray-700 text-sm font-bold mb-2">
                 NFT Name (Optional)
               </label>
@@ -534,9 +534,9 @@ const UploadPDF = ({ account, provider }: UploadPDFProps) => {
                 className="w-full p-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
                 placeholder={`Encrypted PDF: ${file?.name}`}
               />
-            </div>
+            </div> */}
 
-            <div className="mb-4">
+            {/* <div className="mb-4">
               <label className="block text-gray-700 text-sm font-bold mb-2">
                 Description (Optional)
               </label>
@@ -547,7 +547,7 @@ const UploadPDF = ({ account, provider }: UploadPDFProps) => {
                 placeholder="Encrypted PDF document with secure access"
                 rows={3}
               />
-            </div>
+            </div> */}
 
              <button
               type="submit"
@@ -674,7 +674,7 @@ const UploadPDF = ({ account, provider }: UploadPDFProps) => {
               <p>
                 <span className="font-medium">Transaction:</span>{' '}
                 <a 
-                  href={`https://polygon-rpc.com/tx/${mintResult.transactionHash}`} 
+                  href={`https://polygonscan.com/tx/${mintResult.transactionHash}`} 
                   target="_blank" 
                   rel="noopener noreferrer"
                   className="underline"
