@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { ethers } from 'ethers';
 import { useNavigate } from 'react-router-dom';
-import { FileText, Eye } from 'lucide-react';
+import { FileText, Eye, Search } from 'lucide-react';
 
 interface MyNFTsProps {
   account: string | null;
@@ -30,6 +30,7 @@ const MyNFTs = ({ account, provider }: MyNFTsProps) => {
   const [nfts, setNfts] = useState<NFT[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [searchQuery, setSearchQuery] = useState('');
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -157,39 +158,65 @@ const MyNFTs = ({ account, provider }: MyNFTsProps) => {
     );
   }
 
-  return (
-    <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">
-      {nfts.map((nft) => (
-        <div key={nft.tokenId} className="bg-white shadow rounded-lg overflow-hidden">
-          <div className="p-6">
-            <h3 className="text-lg font-medium text-gray-900 truncate">{nft.name}</h3>
-            <p className="mt-1 text-sm text-gray-500">{nft.description}</p>
-            
-            <div className="mt-4 space-y-2">
-              <div className="text-sm">
-                <span className="font-medium text-gray-500">File:</span>{' '}
-                <span className="text-gray-900">{nft.properties.file.name}</span>
-              </div>
-              {/* <div className="text-sm">
-                <span className="font-medium text-gray-500">Size:</span>{' '}
-                <span className="text-gray-900">
-                  {(nft.properties.file.size / 1024).toFixed(2)} KB
-                </span>
-              </div> */}
-            </div>
+  const filteredNFTs = nfts.filter(nft => 
+    nft.properties.file.name.toLowerCase().includes(searchQuery.toLowerCase())
+  );
 
-            <div className="mt-6">
-              <button
-                onClick={() => navigate(`/view/${nft.tokenId}`)}
-                className="w-full inline-flex items-center justify-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700"
-              >
-                <Eye className="mr-2 h-4 w-4" />
-                View PDF
-              </button>
-            </div>
-          </div>
+  return (
+    <div className="space-y-6">
+      <div className="relative">
+        <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+          <Search className="h-5 w-5 text-gray-400" />
         </div>
-      ))}
+        <input
+          type="text"
+          className="block w-full pl-10 pr-3 py-2 border border-gray-300 rounded-md leading-5 bg-white placeholder-gray-500 focus:outline-none focus:placeholder-gray-400 focus:ring-1 focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
+          placeholder="Search by file name..."
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
+        />
+      </div>
+
+      {filteredNFTs.length === 0 ? (
+        <div className="text-center py-12">
+          <h3 className="text-lg font-medium text-gray-900">No matching NFTs found</h3>
+          <p className="mt-1 text-sm text-gray-500">Try adjusting your search query.</p>
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">
+          {filteredNFTs.map((nft) => (
+            <div key={nft.tokenId} className="bg-white shadow rounded-lg overflow-hidden">
+              <div className="p-6">
+                <h3 className="text-lg font-medium text-gray-900 truncate">{nft.name}</h3>
+                <p className="mt-1 text-sm text-gray-500">{nft.description}</p>
+                
+                <div className="mt-4 space-y-2">
+                  <div className="text-sm">
+                    <span className="font-medium text-gray-500">File:</span>{' '}
+                    <span className="text-gray-900">{nft.properties.file.name}</span>
+                  </div>
+                  {/* <div className="text-sm">
+                    <span className="font-medium text-gray-500">Size:</span>{' '}
+                    <span className="text-gray-900">
+                      {(nft.properties.file.size / 1024).toFixed(2)} KB
+                    </span>
+                  </div> */}
+                </div>
+
+                <div className="mt-6">
+                  <button
+                    onClick={() => navigate(`/view/${nft.tokenId}`)}
+                    className="w-full inline-flex items-center justify-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700"
+                  >
+                    <Eye className="mr-2 h-4 w-4" />
+                    View PDF
+                  </button>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 };
