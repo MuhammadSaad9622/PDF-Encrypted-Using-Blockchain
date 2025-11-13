@@ -1,3 +1,131 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+@layer base {
+  :root,
+  html {
+    --dark-bg: #0a0a0f;
+    --dark-card: #1a1a2e;
+    --dark-hover: #2a2a3e;
+    --text-primary: #ffffff;
+    --text-secondary: #9ca3af;
+    --border-color: #374151;
+  }
+
+  html.light {
+    --dark-bg: #ffffff;
+    --dark-card: #f8f9fa;
+    --dark-hover: #e9ecef;
+    --text-primary: #111827;
+    --text-secondary: #6b7280;
+    --border-color: #e5e7eb;
+  }
+
+  body {
+    background-color: var(--dark-bg);
+    color: var(--text-primary);
+    transition: background-color 0.3s ease, color 0.3s ease;
+  }
+}
+
+@layer components {
+  .btn-primary {
+    @apply bg-gradient-to-r from-purple-600 to-pink-500 text-white font-medium py-2 px-6 rounded-lg hover:opacity-90 transition-opacity disabled:opacity-50;
+  }
+  
+  /* Color scheme variations for btn-primary */
+  .color-scheme-blue-purple .btn-primary {
+    @apply bg-gradient-to-r from-blue-600 to-purple-500;
+  }
+  
+  .color-scheme-green-blue .btn-primary {
+    @apply bg-gradient-to-r from-green-500 to-blue-500;
+  }
+  
+  .color-scheme-orange-red .btn-primary {
+    @apply bg-gradient-to-r from-orange-500 to-red-500;
+  }
+  
+  .color-scheme-cyan-purple .btn-primary {
+    @apply bg-gradient-to-r from-cyan-500 to-purple-500;
+  }
+  
+  .btn-secondary {
+    background-color: var(--dark-card);
+    color: var(--text-primary);
+    @apply font-medium py-2 px-6 rounded-lg transition-colors;
+  }
+  
+  .btn-secondary:hover {
+    background-color: var(--dark-hover);
+  }
+  
+  .input-dark {
+    background-color: var(--dark-card);
+    border-color: var(--border-color);
+    color: var(--text-primary);
+    @apply rounded-lg px-4 py-3 focus:outline-none focus:ring-2 focus:border-transparent;
+    --tw-ring-color: var(--color-primary, #9333ea);
+  }
+  
+  .color-scheme-blue-purple .input-dark {
+    @apply focus:ring-blue-500;
+  }
+  
+  .color-scheme-green-blue .input-dark {
+    @apply focus:ring-green-500;
+  }
+  
+  .color-scheme-orange-red .input-dark {
+    @apply focus:ring-orange-500;
+  }
+  
+  .color-scheme-cyan-purple .input-dark {
+    @apply focus:ring-cyan-500;
+  }
+  
+  .card-dark {
+    background-color: var(--dark-card);
+    border-color: var(--border-color);
+    @apply rounded-lg p-6 shadow-lg border;
+  }
+  
+  /* Theme-aware background utilities - using higher specificity */
+  html .bg-dark-bg,
+  html.light .bg-dark-bg {
+    background-color: var(--dark-bg);
+  }
+  
+  html .bg-dark-card,
+  html.light .bg-dark-card {
+    background-color: var(--dark-card);
+  }
+  
+  html .bg-dark-hover,
+  html.light .bg-dark-hover {
+    background-color: var(--dark-hover);
+  }
+}
+
+/* Theme-aware text and border colors with proper specificity */
+html .text-white,
+html.light .text-white {
+  color: var(--text-primary);
+}
+
+html .text-gray-400,
+html.light .text-gray-400,
+html .text-gray-300,
+html.light .text-gray-300,
+html .text-gray-500,
+html.light .text-gray-500 {
+  color: var(--text-secondary);
+}
+
+html .border-gray-800,
+html.light .border-gray-800,
+html .border-gray-700,
+html.light .border-gray-700 {
+  border-color: var(--border-color);
+}

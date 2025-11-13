@@ -1,15 +1,13 @@
 import { useState, useEffect } from 'react';
 import { ethers } from 'ethers';
 import { useParams, useNavigate } from 'react-router-dom';
-import axios from 'axios';
-import { FileText, Download, ArrowLeft } from 'lucide-react';
+import { FileText, Download, ArrowLeft, Wallet } from 'lucide-react';
+import { useWallet } from '../App';
+import { pdfApi } from '../utils/api';
+import { NFT_CONTRACT_ADDRESS, NFT_CONTRACT_ABI } from '../utils/constants';
 
-interface ViewPDFProps {
-  account: string | null;
-  provider: ethers.BrowserProvider | null;
-}
-
-const ViewPDF = ({ account, provider }: ViewPDFProps) => {
+const ViewPDF = () => {
+  const { account, provider, connectWallet } = useWallet();
   const { tokenId } = useParams();
   const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
@@ -22,12 +20,15 @@ const ViewPDF = ({ account, provider }: ViewPDFProps) => {
       if (!account || !provider || !tokenId) return;
 
       try {
+        if (!NFT_CONTRACT_ADDRESS) {
+          setError('NFT contract address is not configured');
+          setLoading(false);
+          return;
+        }
+
         const contract = new ethers.Contract(
-          import.meta.env.VITE_NFT_CONTRACT_ADDRESS!,
-          [
-            'function ownerOf(uint256) view returns (address)',
-            'function tokenURI(uint256) view returns (string)'
-          ],
+          NFT_CONTRACT_ADDRESS,
+          NFT_CONTRACT_ABI,
           provider
         );
 
@@ -45,12 +46,7 @@ const ViewPDF = ({ account, provider }: ViewPDFProps) => {
         
         // Fetch metadata from Arweave via the backend
         console.log('fetchNFTData: Fetching metadata via backend for token ID:', tokenId);
-        const response = await fetch(`https://pdf-encrypted-using-blockchain-2.onrender.com/api/nft-metadata/${tokenId}`);
-        if (!response.ok) {
-           console.error('fetchNFTData: Failed to fetch metadata via backend', response.status, response.statusText);
-           throw new Error(`Failed to fetch metadata via backend: ${response.statusText}`);
-        }
-        const metadata = await response.json();
+        const metadata = await pdfApi.getNftMetadata(tokenId);
         console.log('fetchNFTData: Metadata received via backend:', metadata);
         setMetadata(metadata);
 
@@ -58,17 +54,13 @@ const ViewPDF = ({ account, provider }: ViewPDFProps) => {
         const arweaveId = metadata.properties.file.uri.split('/').pop();
         
         // Fetch and decrypt PDF
-        const decryptResponse = await axios.post(`https://pdf-encrypted-using-blockchain-2.onrender.com/api/decrypt/${tokenId}`, {
-          walletAddress: account
-        }, {
-          responseType: 'blob'
-        });
+        const decryptResponse = await pdfApi.decryptFile(tokenId, account);
 
         console.log('Decryption response received:', decryptResponse);
-        console.log('Decrypted data type (should be Blob):', typeof decryptResponse.data);
-        if (decryptResponse.data instanceof Blob) {
-          console.log('Decrypted data is a Blob, size:', decryptResponse.data.size);
-          console.log('Decrypted data Blob type:', decryptResponse.data.type);
+        console.log('Decrypted data type (should be Blob):', typeof decryptResponse);
+        if (decryptResponse instanceof Blob) {
+          console.log('Decrypted data is a Blob, size:', decryptResponse.size);
+          console.log('Decrypted data Blob type:', decryptResponse.type);
 
           // Read the first few bytes of the Blob to check for PDF signature
           const reader = new FileReader();
@@ -80,12 +72,12 @@ const ViewPDF = ({ account, provider }: ViewPDFProps) => {
               console.log('First 4 bytes of decrypted data (should be %PDF-):', pdfSignature);
             }
           };
-          reader.readAsArrayBuffer(decryptResponse.data.slice(0, 4));
+          reader.readAsArrayBuffer(decryptResponse.slice(0, 4));
 
         }
 
         // Create Blob from response data, ensuring correct type
-        const pdfBlob = new Blob([decryptResponse.data], { type: 'application/pdf' });
+        const pdfBlob = new Blob([decryptResponse], { type: 'application/pdf' });
         const pdfUrl = URL.createObjectURL(pdfBlob);
         setPdfUrl(pdfUrl);
       } catch (err: any) {
@@ -102,8 +94,16 @@ const ViewPDF = ({ account, provider }: ViewPDFProps) => {
   if (!account) {
     return (
       <div className="text-center py-12">
-        <h3 className="text-lg font-medium text-gray-900">No wallet connected</h3>
-        <p className="mt-1 text-sm text-gray-500">Please connect your wallet to view this PDF.</p>
+        <Wallet className="mx-auto h-12 w-12 text-gray-400 mb-4" />
+        <h3 className="text-lg font-medium text-white">No wallet connected</h3>
+        <p className="mt-1 text-sm text-gray-400">Please connect your wallet to view this PDF.</p>
+        <button
+          onClick={connectWallet}
+          className="btn-primary mt-6 inline-flex items-center space-x-2"
+        >
+          <Wallet className="h-5 w-5" />
+          <span>Connect Wallet</span>
+        </button>
       </div>
     );
   }
@@ -111,8 +111,8 @@ const ViewPDF = ({ account, provider }: ViewPDFProps) => {
   if (loading) {
     return (
       <div className="text-center py-12">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-600 mx-auto"></div>
-        <p className="mt-4 text-sm text-gray-500">Loading PDF...</p>
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-purple-500 mx-auto"></div>
+        <p className="mt-4 text-sm text-gray-400">Loading PDF...</p>
       </div>
     );
   }
@@ -120,12 +120,12 @@ const ViewPDF = ({ account, provider }: ViewPDFProps) => {
   if (error) {
     return (
       <div className="text-center py-12">
-        <div className="bg-red-50 text-red-600 p-4 rounded-lg">
+        <div className="bg-red-500/10 border border-red-500/50 text-red-400 p-4 rounded-lg">
           {error}
         </div>
         <button
-          onClick={() => navigate('/my-nfts')}
-          className="mt-4 inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700"
+          onClick={() => navigate('/dashboard/my-nfts')}
+          className="btn-primary mt-4 inline-flex items-center"
         >
           <ArrowLeft className="mr-2 h-4 w-4" />
           Back to My NFTs
@@ -135,57 +135,49 @@ const ViewPDF = ({ account, provider }: ViewPDFProps) => {
   }
 
   return (
-    <div className="bg-white shadow rounded-lg overflow-hidden">
-      <div className="p-6">
-        <div className="flex justify-between items-center mb-6">
-          <h2 className="text-2xl font-bold text-gray-900">{metadata?.name}</h2>
-          <button
-            onClick={() => navigate('/my-nfts')}
-            className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700"
-          >
-            <ArrowLeft className="mr-2 h-4 w-4" />
-            Back to My NFTs
-          </button>
-        </div>
-
-        <div className="mb-6">
-          <p className="text-gray-500">{metadata?.description}</p>
-          <div className="mt-4 space-y-2">
-            <div className="text-sm">
-              <span className="font-medium text-gray-500">File:</span>{' '}
-              <span className="text-gray-900">{metadata?.properties.file.name}</span>
-            </div>
-            {/* <div className="text-sm">
-              <span className="font-medium text-gray-500">Size:</span>{' '}
-              <span className="text-gray-900">
-                {(metadata?.properties.file.size / 1024).toFixed(2)} KB
-              </span>
-            </div> */}
-          </div>
-        </div>
-
-        {pdfUrl && (
-          <div className="mt-6">
-            <div className="aspect-w-16 aspect-h-9 bg-gray-100 rounded-lg overflow-hidden">
-              <iframe
-                src={pdfUrl}
-                className="w-full h-full"
-                title="PDF Viewer"
-              />
-            </div>
-            <div className="mt-4">
-              <a
-                href={pdfUrl}
-                download={`${metadata?.properties.file.name}`}
-                className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700"
-              >
-                <Download className="mr-2 h-4 w-4" />
-                Download PDF
-              </a>
-            </div>
-          </div>
-        )}
+    <div className="card-dark">
+      <div className="flex justify-between items-center mb-6">
+        <h2 className="text-2xl font-bold text-white">{metadata?.name}</h2>
+        <button
+          onClick={() => navigate('/dashboard/my-nfts')}
+          className="btn-secondary inline-flex items-center"
+        >
+          <ArrowLeft className="mr-2 h-4 w-4" />
+          Back to My NFTs
+        </button>
       </div>
+
+      <div className="mb-6">
+        <p className="text-gray-400">{metadata?.description}</p>
+        <div className="mt-4 space-y-2">
+          <div className="text-sm">
+            <span className="font-medium text-gray-400">File:</span>{' '}
+            <span className="text-white">{metadata?.properties.file.name}</span>
+          </div>
+        </div>
+      </div>
+
+      {pdfUrl && (
+        <div className="mt-6">
+          <div className="aspect-w-16 aspect-h-9 bg-gray-800 rounded-lg overflow-hidden">
+            <iframe
+              src={pdfUrl}
+              className="w-full h-full"
+              title="PDF Viewer"
+            />
+          </div>
+          <div className="mt-4">
+            <a
+              href={pdfUrl}
+              download={`${metadata?.properties.file.name}`}
+              className="btn-primary inline-flex items-center"
+            >
+              <Download className="mr-2 h-4 w-4" />
+              Download PDF
+            </a>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
