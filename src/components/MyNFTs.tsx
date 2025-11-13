@@ -1,12 +1,10 @@
 import { useState, useEffect } from 'react';
 import { ethers } from 'ethers';
 import { useNavigate } from 'react-router-dom';
-import { FileText, Eye, Search } from 'lucide-react';
-
-interface MyNFTsProps {
-  account: string | null;
-  provider: ethers.BrowserProvider | null;
-}
+import { FileText, Eye, Search, Wallet } from 'lucide-react';
+import { useWallet } from '../App';
+import { pdfApi } from '../utils/api';
+import { NFT_CONTRACT_ADDRESS, NFT_CONTRACT_ABI } from '../utils/constants';
 
 interface NFT {
   tokenId: string;
@@ -26,7 +24,8 @@ interface NFT {
   };
 }
 
-const MyNFTs = ({ account, provider }: MyNFTsProps) => {
+const MyNFTs = () => {
+  const { account, provider, connectWallet } = useWallet();
   const [nfts, setNfts] = useState<NFT[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -53,10 +52,9 @@ const MyNFTs = ({ account, provider }: MyNFTsProps) => {
           // Continue, as sometimes provider might be valid even if network check fails early
         }
 
-        const contractAddress = '0xA16185A3639e128eC3C6CDfDF2681C0887673f4d';
-        console.log('fetchNFTs: Using contract address:', contractAddress);
+        console.log('fetchNFTs: Using contract address:', NFT_CONTRACT_ADDRESS);
 
-        if (!contractAddress) {
+        if (!NFT_CONTRACT_ADDRESS) {
           console.error('fetchNFTs: NFT contract address is not defined');
           setError('NFT contract address is not configured.');
           setLoading(false);
@@ -64,12 +62,8 @@ const MyNFTs = ({ account, provider }: MyNFTsProps) => {
         }
 
         const contract = new ethers.Contract(
-          contractAddress,
-          [
-            'function balanceOf(address owner) view returns (uint256)',
-            'function tokenOfOwnerByIndex(address owner, uint256 index) view returns (uint256)',
-            'function tokenURI(uint256 tokenId) view returns (string)'
-          ],
+          NFT_CONTRACT_ADDRESS,
+          NFT_CONTRACT_ABI,
           provider
         );
 
@@ -77,35 +71,38 @@ const MyNFTs = ({ account, provider }: MyNFTsProps) => {
         const balance = await contract.balanceOf(account);
         console.log('fetchNFTs: Balance received:', balance.toString());
         
-        const nftPromises = [];
-
-        for (let i = 0; i < balance; i++) {
-          console.log('fetchNFTs: Fetching token ID for index:', i);
-          const tokenId = await contract.tokenOfOwnerByIndex(account, i);
-          console.log('fetchNFTs: Got token ID:', tokenId.toString());
-          
-          console.log('fetchNFTs: Fetching token URI for token ID:', tokenId.toString());
-          const tokenURI = await contract.tokenURI(tokenId);
-          console.log('fetchNFTs: Got token URI:', tokenURI);
-
-          // Fetch metadata from Arweave via the backend
-          console.log('fetchNFTs: Fetching metadata via backend for token ID:', tokenId.toString());
-          const response = await fetch(`https://pdf-encrypted-using-blockchain-2.onrender.com/api/nft-metadata/${tokenId.toString()}`);
-          if (!response.ok) {
-             console.error('fetchNFTs: Failed to fetch metadata via backend', response.status, response.statusText);
-             // It might be useful to throw an error here or set an error state if fetching metadata fails
-             throw new Error(`Failed to fetch metadata via backend for token ${tokenId.toString()}`);
-          }
-          const metadata = await response.json();
-          console.log('fetchNFTs: Metadata received via backend:', metadata);
-          
-          nftPromises.push({
-            tokenId: tokenId.toString(),
-            ...metadata
-          });
+        if (balance === 0n) {
+          setNfts([]);
+          setLoading(false);
+          return;
         }
 
-        const nftData = await Promise.all(nftPromises);
+        // Fetch all token IDs in parallel
+        const tokenIdPromises = [];
+        for (let i = 0; i < balance; i++) {
+          tokenIdPromises.push(contract.tokenOfOwnerByIndex(account, i));
+        }
+        const tokenIds = await Promise.all(tokenIdPromises);
+        console.log('fetchNFTs: All token IDs fetched:', tokenIds.map(t => t.toString()));
+
+        // Fetch all metadata in parallel
+        const nftPromises = tokenIds.map(async (tokenId) => {
+          try {
+            const tokenIdStr = tokenId.toString();
+            console.log('fetchNFTs: Fetching metadata for token ID:', tokenIdStr);
+            const metadata = await pdfApi.getNftMetadata(tokenIdStr);
+            console.log('fetchNFTs: Metadata received for token ID:', tokenIdStr);
+            return {
+              tokenId: tokenIdStr,
+              ...metadata
+            };
+          } catch (error) {
+            console.error(`Error fetching metadata for token ${tokenId.toString()}:`, error);
+            return null;
+          }
+        });
+
+        const nftData = (await Promise.all(nftPromises)).filter(nft => nft !== null);
         console.log('fetchNFTs: All NFT data fetched', nftData);
         setNfts(nftData);
       } catch (err: any) {
@@ -123,8 +120,16 @@ const MyNFTs = ({ account, provider }: MyNFTsProps) => {
   if (!account) {
     return (
       <div className="text-center py-12">
-        <h3 className="text-lg font-medium text-gray-900">No wallet connected</h3>
-        <p className="mt-1 text-sm text-gray-500">Please connect your wallet to view your NFTs.</p>
+        <Wallet className="mx-auto h-12 w-12 text-gray-400 mb-4" />
+        <h3 className="text-lg font-medium text-white">No wallet connected</h3>
+        <p className="mt-1 text-sm text-gray-400">Please connect your wallet to view your NFTs.</p>
+        <button
+          onClick={connectWallet}
+          className="btn-primary mt-6 inline-flex items-center space-x-2"
+        >
+          <Wallet className="h-5 w-5" />
+          <span>Connect Wallet</span>
+        </button>
       </div>
     );
   }
@@ -132,8 +137,8 @@ const MyNFTs = ({ account, provider }: MyNFTsProps) => {
   if (loading) {
     return (
       <div className="text-center py-12">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-600 mx-auto"></div>
-        <p className="mt-4 text-sm text-gray-500">Loading your NFTs...</p>
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-purple-500 mx-auto"></div>
+        <p className="mt-4 text-sm text-gray-400">Loading your NFTs...</p>
       </div>
     );
   }
@@ -141,7 +146,7 @@ const MyNFTs = ({ account, provider }: MyNFTsProps) => {
   if (error) {
     return (
       <div className="text-center py-12">
-        <div className="bg-red-50 text-red-600 p-4 rounded-lg">
+        <div className="bg-red-500/10 border border-red-500/50 text-red-400 p-4 rounded-lg">
           {error}
         </div>
       </div>
@@ -152,8 +157,8 @@ const MyNFTs = ({ account, provider }: MyNFTsProps) => {
     return (
       <div className="text-center py-12">
         <FileText className="mx-auto h-12 w-12 text-gray-400" />
-        <h3 className="mt-2 text-sm font-medium text-gray-900">No NFTs found</h3>
-        <p className="mt-1 text-sm text-gray-500">You haven't minted any PDF NFTs yet.</p>
+        <h3 className="mt-2 text-sm font-medium text-white">No NFTs found</h3>
+        <p className="mt-1 text-sm text-gray-400">You haven't minted any PDF NFTs yet.</p>
       </div>
     );
   }
@@ -170,7 +175,7 @@ const MyNFTs = ({ account, provider }: MyNFTsProps) => {
         </div>
         <input
           type="text"
-          className="block w-full pl-10 pr-3 py-2 border border-gray-300 rounded-md leading-5 bg-white placeholder-gray-500 focus:outline-none focus:placeholder-gray-400 focus:ring-1 focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
+          className="input-dark w-full pl-10"
           placeholder="Search by file name..."
           value={searchQuery}
           onChange={(e) => setSearchQuery(e.target.value)}
@@ -179,39 +184,31 @@ const MyNFTs = ({ account, provider }: MyNFTsProps) => {
 
       {filteredNFTs.length === 0 ? (
         <div className="text-center py-12">
-          <h3 className="text-lg font-medium text-gray-900">No matching NFTs found</h3>
-          <p className="mt-1 text-sm text-gray-500">Try adjusting your search query.</p>
+          <h3 className="text-lg font-medium text-white">No matching NFTs found</h3>
+          <p className="mt-1 text-sm text-gray-400">Try adjusting your search query.</p>
         </div>
       ) : (
         <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">
           {filteredNFTs.map((nft) => (
-            <div key={nft.tokenId} className="bg-white shadow rounded-lg overflow-hidden">
-              <div className="p-6">
-                <h3 className="text-lg font-medium text-gray-900 truncate">{nft.name}</h3>
-                <p className="mt-1 text-sm text-gray-500">{nft.description}</p>
-                
-                <div className="mt-4 space-y-2">
-                  <div className="text-sm">
-                    <span className="font-medium text-gray-500">File:</span>{' '}
-                    <span className="text-gray-900">{nft.properties.file.name}</span>
-                  </div>
-                  {/* <div className="text-sm">
-                    <span className="font-medium text-gray-500">Size:</span>{' '}
-                    <span className="text-gray-900">
-                      {(nft.properties.file.size / 1024).toFixed(2)} KB
-                    </span>
-                  </div> */}
+            <div key={nft.tokenId} className="card-dark">
+              <h3 className="text-lg font-medium text-white truncate">{nft.name}</h3>
+              <p className="mt-1 text-sm text-gray-400">{nft.description}</p>
+              
+              <div className="mt-4 space-y-2">
+                <div className="text-sm">
+                  <span className="font-medium text-gray-400">File:</span>{' '}
+                  <span className="text-white">{nft.properties.file.name}</span>
                 </div>
+              </div>
 
-                <div className="mt-6">
-                  <button
-                    onClick={() => navigate(`/view/${nft.tokenId}`)}
-                    className="w-full inline-flex items-center justify-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700"
-                  >
-                    <Eye className="mr-2 h-4 w-4" />
-                    View PDF
-                  </button>
-                </div>
+              <div className="mt-6">
+                <button
+                  onClick={() => navigate(`/dashboard/view/${nft.tokenId}`)}
+                  className="btn-primary w-full inline-flex items-center justify-center"
+                >
+                  <Eye className="mr-2 h-4 w-4" />
+                  View PDF
+                </button>
               </div>
             </div>
           ))}
